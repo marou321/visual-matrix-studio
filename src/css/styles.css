@@ -707,6 +707,7 @@ button, input, select, textarea {
   box-shadow: var(--shadow-lg);
   border: 1px solid var(--border-strong);
   line-height: 0;
+  contain: layout paint;
 }
 
 #studio-canvas {
@@ -729,12 +730,11 @@ button, input, select, textarea {
   gap: 0.4rem;
   padding: 0.34rem 0.68rem;
   border-radius: 999px;
-  background: rgba(8, 11, 18, 0.78);
+  background: rgba(8, 11, 18, 0.88);
   color: #e2e8f0;
   border: 1px solid rgba(148, 163, 184, 0.25);
   font-family: var(--font-mono);
   font-size: 0.72rem;
-  backdrop-filter: blur(8px);
 }
 
 .drop-overlay {
@@ -1109,7 +1109,8 @@ input[type="range"]::-moz-range-thumb {
   border-radius: var(--radius-lg);
   overflow: hidden;
   box-shadow: var(--shadow-sm);
-  transition: transform 220ms ease, border-color 220ms ease, box-shadow 220ms ease;
+  contain: layout paint;
+  transition: transform 200ms ease, border-color 200ms ease;
 }
 
 .gallery-card:hover {

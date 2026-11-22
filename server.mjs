@@ -1,11 +1,17 @@
 import http from 'node:http';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import zlib from 'node:zlib';
+import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
+
+const brotliCompress = promisify(zlib.brotliCompress);
+const gzipCompress = promisify(zlib.gzip);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PORT = Number(process.env.PORT) || 4173;
+const HOST = '0.0.0.0';
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -25,6 +31,9 @@ const MIME_TYPES = {
   '.woff2': 'font/woff2'
 };
 
+const COMPRESSIBLE_EXTS = new Set(['.html', '.css', '.js', '.mjs', '.json', '.svg', '.xml', '.txt']);
+const assetCache = new Map();
+
 async function resolveFilePath(urlPath) {
   const cleanPath = decodeURIComponent(urlPath.split('?')[0]);
   const normalized = path.posix.normalize(cleanPath);
@@ -38,17 +47,17 @@ async function resolveFilePath(urlPath) {
   try {
     const stat = await fs.stat(candidate);
     if (stat.isFile()) {
-      return candidate;
+      return { filePath: candidate, stat };
     }
     if (stat.isDirectory()) {
       const dirIndex = path.join(candidate, 'index.html');
       const idxStat = await fs.stat(dirIndex);
       if (idxStat.isFile()) {
-        return dirIndex;
+        return { filePath: dirIndex, stat: idxStat };
       }
     }
   } catch {
-    // Try appending .html or /index.html for clean routes
+    // Try appending /index.html or .html for clean routes
   }
 
   if (!path.extname(candidate)) {
@@ -56,7 +65,7 @@ async function resolveFilePath(urlPath) {
       try {
         const stat = await fs.stat(fallback);
         if (stat.isFile()) {
-          return fallback;
+          return { filePath: fallback, stat };
         }
       } catch {
         // continue
@@ -67,6 +76,26 @@ async function resolveFilePath(urlPath) {
   return null;
 }
 
+async function loadAsset(filePath, stat, ext) {
+  const cached = assetCache.get(filePath);
+  if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) {
+    return cached;
+  }
+
+  const raw = await fs.readFile(filePath);
+  const compressible = COMPRESSIBLE_EXTS.has(ext) && raw.length > 512;
+  const entry = {
+    mtimeMs: stat.mtimeMs,
+    size: stat.size,
+    etag: `"${stat.size.toString(16)}-${Math.floor(stat.mtimeMs).toString(16)}"`,
+    raw,
+    br: compressible ? await brotliCompress(raw) : null,
+    gzip: compressible ? await gzipCompress(raw) : null
+  };
+  assetCache.set(filePath, entry);
+  return entry;
+}
+
 const server = http.createServer(async (req, res) => {
   if (!req.url) {
     res.writeHead(400);
@@ -74,8 +103,8 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  const filePath = await resolveFilePath(req.url);
-  if (!filePath) {
+  const resolved = await resolveFilePath(req.url);
+  if (!resolved) {
     res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
     res.end(`<!DOCTYPE html>
 <html lang="en">
@@ -108,28 +137,56 @@ const server = http.createServer(async (req, res) => {
   }
 
   try {
-    const data = await fs.readFile(filePath);
+    const { filePath, stat } = resolved;
     const ext = path.extname(filePath).toLowerCase();
     const contentType = MIME_TYPES[ext] || 'application/octet-stream';
     const isCodeAsset = ext === '.html' || ext === '.css' || ext === '.js' || ext === '.mjs';
-    res.writeHead(200, {
+    const asset = await loadAsset(filePath, stat, ext);
+
+    if (req.headers['if-none-match'] === asset.etag) {
+      res.writeHead(304, {
+        ETag: asset.etag,
+        'Cache-Control': isCodeAsset ? 'no-cache, must-revalidate' : 'public, max-age=86400',
+        'X-App-Version': '2.3.0-perf-optimized'
+      });
+      res.end();
+      return;
+    }
+
+    const acceptEncoding = String(req.headers['accept-encoding'] || '');
+    let body = asset.raw;
+    let encoding = null;
+    if (asset.br && acceptEncoding.includes('br')) {
+      body = asset.br;
+      encoding = 'br';
+    } else if (asset.gzip && acceptEncoding.includes('gzip')) {
+      body = asset.gzip;
+      encoding = 'gzip';
+    }
+
+    const headers = {
       'Content-Type': contentType,
-      'Content-Length': data.length,
+      'Content-Length': body.length,
+      ETag: asset.etag,
       'Cache-Control': isCodeAsset ? 'no-cache, must-revalidate' : 'public, max-age=86400',
-      'X-App-Version': '2.2.0-aquarelle-outline-fix'
-    });
+      'X-App-Version': '2.3.0-perf-optimized'
+    };
+    if (encoding) {
+      headers['Content-Encoding'] = encoding;
+      headers.Vary = 'Accept-Encoding';
+    }
+
+    res.writeHead(200, headers);
     if (req.method === 'HEAD') {
       res.end();
     } else {
-      res.end(data);
+      res.end(body);
     }
-  } catch (err) {
+  } catch {
     res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
     res.end('Internal Server Error');
   }
 });
-
-const HOST = '0.0.0.0';
 
 server.listen(PORT, HOST, () => {
   console.log(`ChromaGlyph Studio running at http://${HOST}:${PORT}`);

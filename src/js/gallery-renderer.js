@@ -206,31 +206,92 @@ export async function mountGallery(containerId, options = {}) {
     }
   }
 
-  // Render crisp canvases asynchronously without blocking initial paint
-  for (const entry of cardEntries) {
+  // Lazy-render thumbnails only when scrolled near viewport, yielding between cards so Studio never stalls
+  const renderEntry = async (entry) => {
+    if (entry.rendered) return;
+    entry.rendered = true;
     const img = await loadSampleImage(entry.item.sampleId);
-    const result = renderArtwork(img, entry.item.settings, { maxDimension: 620 });
+    const result = renderArtwork(img, entry.item.settings, { maxDimension: 420 });
     const ctx = entry.canvas.getContext('2d');
     entry.canvas.width = result.width;
     entry.canvas.height = result.height;
     ctx.drawImage(result.baseCanvas, 0, 0);
 
-    // Subtle interactive spotlight right on gallery cards
+    // Throttled rAF spotlight on gallery cards (cached rect — zero layout thrashing)
     const pointer = { active: false, x: 0, y: 0 };
-    const cardSpotlightCfg = { ...entry.item.settings, spotlightRadius: 85 };
+    const cardSpotlightCfg = { ...entry.item.settings, spotlightRadius: 72 };
+    let cardRect = null;
+    let cardRaf = null;
+
+    const paintCard = () => {
+      cardRaf = null;
+      compositeWithSpotlight(entry.canvas, result, img, cardSpotlightCfg, pointer);
+    };
+
+    entry.canvas.addEventListener('pointerenter', () => {
+      cardRect = entry.canvas.getBoundingClientRect();
+    }, { passive: true });
 
     entry.canvas.addEventListener('pointermove', (e) => {
-      const rect = entry.canvas.getBoundingClientRect();
+      const rect = cardRect || entry.canvas.getBoundingClientRect();
+      cardRect = rect;
+      if (!rect.width || !rect.height) return;
       pointer.active = true;
       pointer.x = ((e.clientX - rect.left) / rect.width) * entry.canvas.width;
       pointer.y = ((e.clientY - rect.top) / rect.height) * entry.canvas.height;
-      compositeWithSpotlight(entry.canvas, result, img, cardSpotlightCfg, pointer);
-    });
+      if (!cardRaf) cardRaf = requestAnimationFrame(paintCard);
+    }, { passive: true });
 
     entry.canvas.addEventListener('pointerleave', () => {
       pointer.active = false;
-      compositeWithSpotlight(entry.canvas, result, img, cardSpotlightCfg, pointer);
+      cardRect = null;
+      if (!cardRaf) cardRaf = requestAnimationFrame(paintCard);
+    }, { passive: true });
+  };
+
+  // Sequential idle queue so multiple cards entering viewport at once never block a frame
+  const renderQueue = [];
+  let queueRunning = false;
+  const pumpQueue = () => {
+    if (queueRunning || renderQueue.length === 0) return;
+    queueRunning = true;
+    const next = renderQueue.shift();
+    const runNext = async () => {
+      await renderEntry(next);
+      queueRunning = false;
+      if (renderQueue.length > 0) {
+        setTimeout(pumpQueue, 16);
+      }
+    };
+    if (typeof requestIdleCallback === 'function') {
+      requestIdleCallback(() => runNext(), { timeout: 220 });
+    } else {
+      setTimeout(runNext, 24);
+    }
+  };
+
+  if (typeof IntersectionObserver === 'function') {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const ioEntry of entries) {
+          if (!ioEntry.isIntersecting) continue;
+          const match = cardEntries.find((e) => e.card === ioEntry.target);
+          if (match && !match.queued) {
+            match.queued = true;
+            observer.unobserve(ioEntry.target);
+            renderQueue.push(match);
+            pumpQueue();
+          }
+        }
+      },
+      { rootMargin: '240px 0px' }
+    );
+    cardEntries.forEach((entry) => observer.observe(entry.card));
+  } else {
+    cardEntries.forEach((entry) => {
+      renderQueue.push(entry);
     });
+    pumpQueue();
   }
 
   // Mode filter buttons (on /gallery page)

@@ -27,13 +27,46 @@ function initStudio() {
   const state = {
     config: { ...DEFAULT_CONFIG },
     sourceImage: null,
+    workingSource: null,
     sourceLabel: 'Neon Portrait',
     activeSampleId: 'neon-portrait',
     renderResult: null,
     showOriginal: false,
     pointer: { active: false, x: 0, y: 0 },
-    rafId: null
+    rafId: null,
+    renderRafId: null,
+    settleTimer: null,
+    canvasRect: null
   };
+
+  // Persistent offscreen buffer reused across interactive preview frames (zero GC churn)
+  const previewBaseCanvas = document.createElement('canvas');
+
+  /**
+   * Downscales ultra-large uploads once into a crisp 1600px working buffer for fast preview
+   * while keeping full-res sourceImage available for 1x/2x PNG export.
+   */
+  function buildWorkingSource(img) {
+    const w = img.naturalWidth || img.width || 960;
+    const h = img.naturalHeight || img.height || 720;
+    const maxWorking = 1280;
+    if (Math.max(w, h) <= maxWorking) {
+      return img;
+    }
+    const scale = maxWorking / Math.max(w, h);
+    const c = document.createElement('canvas');
+    c.width = Math.round(w * scale);
+    c.height = Math.round(h * scale);
+    const cctx = c.getContext('2d');
+    cctx.imageSmoothingEnabled = true;
+    cctx.imageSmoothingQuality = 'high';
+    cctx.drawImage(img, 0, 0, c.width, c.height);
+    return c;
+  }
+
+  function refreshCanvasRect() {
+    state.canvasRect = canvas.getBoundingClientRect();
+  }
 
   // DOM References
   const sampleStrip = document.getElementById('sample-strip');
@@ -215,54 +248,73 @@ function initStudio() {
   function paintFrame() {
     if (!state.renderResult) return;
 
-    if (state.showOriginal && state.sourceImage) {
+    if (state.showOriginal && state.workingSource) {
       const ctx = canvas.getContext('2d');
       canvas.width = state.renderResult.width;
       canvas.height = state.renderResult.height;
-      ctx.drawImage(state.sourceImage, 0, 0, canvas.width, canvas.height);
+      ctx.drawImage(state.workingSource, 0, 0, canvas.width, canvas.height);
       return;
     }
 
     compositeWithSpotlight(
       canvas,
       state.renderResult,
-      state.sourceImage,
+      state.workingSource || state.sourceImage,
       state.config,
       state.pointer
     );
   }
 
-  let renderDebounce = null;
+  function runRender(maxDimension) {
+    const src = state.workingSource || state.sourceImage;
+    if (!src) return;
+    state.renderResult = renderArtwork(src, state.config, {
+      maxDimension,
+      targetCanvas: previewBaseCanvas
+    });
+    paintFrame();
+    refreshCanvasRect();
+
+    const r = state.renderResult;
+    if (statDims) statDims.textContent = `${r.width}×${r.height}px`;
+    if (statGrid) {
+      if (state.config.mode === 'aquarelle') {
+        statGrid.textContent = `${r.cols}×${r.rows} wash grid`;
+      } else if (state.config.mode === 'outline') {
+        statGrid.textContent = `${r.cols}×${r.rows} contour map`;
+      } else {
+        statGrid.textContent = `${r.cols}×${r.rows} (${(r.cols * r.rows).toLocaleString()} cells)`;
+      }
+    }
+    if (statMode) statMode.textContent = MODE_LABELS[state.config.mode] || state.config.mode;
+    if (statTime) statTime.textContent = `${r.renderMs}ms`;
+  }
 
   function scheduleFullRender(immediate = false) {
     if (!state.sourceImage) return;
-    const execute = () => {
-      state.renderResult = renderArtwork(state.sourceImage, state.config, {
-        maxDimension: 1080
-      });
-      paintFrame();
 
-      const r = state.renderResult;
-      if (statDims) statDims.textContent = `${r.width}×${r.height}px`;
-      if (statGrid) {
-        if (state.config.mode === 'aquarelle') {
-          statGrid.textContent = `${r.cols}×${r.rows} wash grid`;
-        } else if (state.config.mode === 'outline') {
-          statGrid.textContent = `${r.cols}×${r.rows} contour map`;
-        } else {
-          statGrid.textContent = `${r.cols}×${r.rows} (${(r.cols * r.rows).toLocaleString()} cells)`;
-        }
-      }
-      if (statMode) statMode.textContent = MODE_LABELS[state.config.mode] || state.config.mode;
-      if (statTime) statTime.textContent = `${r.renderMs}ms`;
-    };
+    clearTimeout(state.settleTimer);
 
-    clearTimeout(renderDebounce);
     if (immediate) {
-      execute();
-    } else {
-      renderDebounce = setTimeout(execute, 24);
+      if (state.renderRafId) {
+        cancelAnimationFrame(state.renderRafId);
+        state.renderRafId = null;
+      }
+      runRender(920);
+      return;
     }
+
+    // Smooth rAF-gated interactive drag preview (680px), then sharpen to 920px once slider settles
+    if (!state.renderRafId) {
+      state.renderRafId = requestAnimationFrame(() => {
+        state.renderRafId = null;
+        runRender(680);
+      });
+    }
+
+    state.settleTimer = setTimeout(() => {
+      runRender(920);
+    }, 140);
   }
 
   function scheduleSpotlightPaint() {
@@ -279,6 +331,7 @@ function initStudio() {
     state.sourceLabel = sample.name;
     updateSampleActiveState();
     state.sourceImage = await loadSampleImage(sample.id);
+    state.workingSource = buildWorkingSource(state.sourceImage);
     scheduleFullRender(true);
   }
 
@@ -292,6 +345,7 @@ function initStudio() {
       const img = new Image();
       img.onload = () => {
         state.sourceImage = img;
+        state.workingSource = buildWorkingSource(img);
         state.activeSampleId = '';
         state.sourceLabel = file.name.replace(/\.[^.]+$/, '');
         updateSampleActiveState();
@@ -517,20 +571,25 @@ function initStudio() {
     });
   }
 
-  // Interactive Mouse / Touch Spotlight Tracking
+  // Interactive Mouse / Touch Spotlight Tracking (cached rect — zero layout thrashing on pointermove)
+  window.addEventListener('resize', refreshCanvasRect, { passive: true });
+  window.addEventListener('scroll', refreshCanvasRect, { passive: true });
+
+  canvas.addEventListener('pointerenter', refreshCanvasRect, { passive: true });
   canvas.addEventListener('pointermove', (e) => {
-    const rect = canvas.getBoundingClientRect();
+    const rect = state.canvasRect || canvas.getBoundingClientRect();
+    state.canvasRect = rect;
     if (!rect.width || !rect.height) return;
     state.pointer.active = true;
     state.pointer.x = ((e.clientX - rect.left) / rect.width) * canvas.width;
     state.pointer.y = ((e.clientY - rect.top) / rect.height) * canvas.height;
     scheduleSpotlightPaint();
-  });
+  }, { passive: true });
 
   canvas.addEventListener('pointerleave', () => {
     state.pointer.active = false;
     scheduleSpotlightPaint();
-  });
+  }, { passive: true });
 
   // Compare Original Toggle
   if (compareBtn) {
