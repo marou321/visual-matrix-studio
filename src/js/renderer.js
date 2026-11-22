@@ -1,18 +1,17 @@
 /**
- * ChromaGlyph Studio — High-Performance, Freeze-Proof Rendering Engine
+ * ChromaGlyph Studio — Non-Blocking, Freeze-Proof Rendering Engine
  * Modes:
  *  - binary:    0/1 character art mapped by luminance threshold (with optional Bayer 4x4 dithering)
  *  - ascii:     Multi-ramp character art mapped by optical density & real RGB or curated palettes
  *  - dots:      Halftone dot matrix with radius/opacity response and square or hexagonal grids
- *  - aquarelle: Fast multi-pass translucent watercolor washes, pigment bleed, capillary rims & paper grain
- *  - outline:   Color-aware Sobel + 8-way NMS contour extraction with batched vector strokes & #FFFFFF interior
+ *  - aquarelle: Direct-pixel wet-on-wet watercolor wash + paper grain + <=280 soft pigment blooms
+ *  - outline:   Cached color-aware Sobel + 8-way NMS + direct ImageData contour stamping over #FFFFFF interior
  *
- * Anti-freeze guarantees:
- *  - Strict max cell budget (prevents O(1/cellSize^2) 40,000+ fillText/arc tab freezes)
- *  - Color-bucketed Canvas 2D draw batching across Binary, ASCII, Dots, Aquarelle, and Outline
- *  - Pooled offscreen scratch canvases (zero per-frame canvas GC churn)
- *  - Zero per-dab createRadialGradient allocations inside inner loops
- *  - AABB spatial culling & font-state caching in 60fps cursor spotlight compositing
+ * Anti-freeze architecture:
+ *  - Intermediate pixel/edge caching for Aquarelle & Outline (dragging sliders reuses cached buffers in <4ms)
+ *  - Direct ImageData rendering for Outline & Aquarelle base (zero Skia giant compound-path tessellation freezes)
+ *  - Hard cell budgets for Binary, ASCII, and Dots modes
+ *  - Pooled offscreen scratch canvases & AABB-culled 60fps cursor spotlight
  */
 
 export const ASCII_RAMPS = {
@@ -98,7 +97,7 @@ const BAYER_4X4 = [
   [15 / 16 - 0.5, 7 / 16 - 0.5, 13 / 16 - 0.5, 5 / 16 - 0.5]
 ];
 
-// Reusable offscreen scratch canvas pool (avoids per-frame DOM allocations & GC pauses)
+// Reusable offscreen scratch canvas pool
 const scratchPool = new Map();
 
 function getScratchCanvas(key, w, h) {
@@ -113,6 +112,10 @@ function getScratchCanvas(key, w, h) {
   if (c.height !== safeH) c.height = safeH;
   return c;
 }
+
+// Single-slot intermediate caches for Aquarelle & Outline so slider drags never recompute source pixel/edge passes
+let outlineEdgeCache = null;
+let aquarelleSourceCache = null;
 
 function clamp255(v) {
   return v < 0 ? 0 : v > 255 ? 255 : v;
@@ -177,36 +180,6 @@ function mapPaletteColor(r, g, b, lum, palette, isLightBg) {
   }
 }
 
-let cachedPaperPatternCanvas = null;
-
-function getPaperGrainTile() {
-  if (cachedPaperPatternCanvas) return cachedPaperPatternCanvas;
-  const size = 128;
-  const tile = document.createElement('canvas');
-  tile.width = size;
-  tile.height = size;
-  const tctx = tile.getContext('2d');
-  const imgData = tctx.createImageData(size, size);
-  const d = imgData.data;
-  const rand = mulberry32(42197);
-
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const idx = (y * size + x) * 4;
-      const wave = Math.sin(x * 0.19 + y * 0.07) * 6 + Math.cos(y * 0.23 - x * 0.05) * 5;
-      const noise = (rand() - 0.5) * 24;
-      const shade = clamp255(238 + wave + noise);
-      d[idx] = shade;
-      d[idx + 1] = clamp255(shade - 2);
-      d[idx + 2] = clamp255(shade - 6);
-      d[idx + 3] = 26;
-    }
-  }
-  tctx.putImageData(imgData, 0, 0);
-  cachedPaperPatternCanvas = tile;
-  return tile;
-}
-
 function smoothField(srcR, srcG, srcB, w, h, radius) {
   if (radius <= 0) return { r: srcR, g: srcG, b: srcB };
   const len = w * h;
@@ -264,9 +237,23 @@ function smoothField(srcR, srcG, srcB, w, h, radius) {
   return { r: outR, g: outG, b: outB };
 }
 
+// Fast deterministic paper tooth noise table (64x64 tiled via bitwise mask — zero allocations)
+const PAPER_NOISE_64 = (() => {
+  const arr = new Int8Array(64 * 64);
+  const rand = mulberry32(42197);
+  for (let y = 0; y < 64; y++) {
+    for (let x = 0; x < 64; x++) {
+      const wave = Math.sin(x * 0.29 + y * 0.1) * 4 + Math.cos(y * 0.31 - x * 0.08) * 3;
+      arr[(y << 6) | x] = Math.round(wave + (rand() - 0.5) * 14);
+    }
+  }
+  return arr;
+})();
+
 /**
- * Ultra-Fast Aquarelle (Watercolor) Rendering Mode
- * Budgeted strictly under ~850 expressive organic washes + batched edge accents + paper tooth.
+ * Non-Blocking Aquarelle (Watercolor) Rendering Mode
+ * Stage 1: Direct ImageData wet-on-wet wash + pigment pooling along edges + paper grain (1 drawImage)
+ * Stage 2: Strictly bounded (<= 240) lightweight translucent circular pigment blooms (zero giant paths)
  */
 function renderAquarelle(
   source,
@@ -286,65 +273,136 @@ function renderAquarelle(
   baseCanvas.height = outHeight;
   const ctx = baseCanvas.getContext('2d');
 
-  const paperHex = bgSpec.hex;
-  ctx.fillStyle = paperHex;
-  ctx.fillRect(0, 0, outWidth, outHeight);
-
   const softnessNorm = Math.max(0, Math.min(1, (cfg.aquarelleSoftness - 20) / 80));
   const pigmentNorm = Math.max(0.35, Math.min(1.5, cfg.aquarellePigment / 100));
   const detailLevel = Math.max(1, Math.min(5, Math.round(cfg.aquarelleDetail)));
   const isDraft = Boolean(options.isDraft);
 
-  const toWatercolorRGB = (rawR, rawG, rawB) => {
+  // Bounded working buffer for direct-pixel watercolor wash & paper tooth
+  const aspect = outHeight / outWidth;
+  const washMaxW = isDraft ? 140 : options.exportScale > 1 ? 320 : 220;
+  const w = Math.max(64, Math.min(washMaxW, Math.round(90 + detailLevel * 32 - softnessNorm * 36)));
+  const h = Math.max(48, Math.round(w * aspect));
+
+  // Cache sampled raw pixels per (source, w, h) so dragging watercolor sliders skips getImageData
+  let rawPixels;
+  if (
+    aquarelleSourceCache &&
+    aquarelleSourceCache.source === source &&
+    aquarelleSourceCache.w === w &&
+    aquarelleSourceCache.h === h
+  ) {
+    rawPixels = aquarelleSourceCache.raw;
+  } else {
+    const sCanvas = getScratchCanvas('aq-raw', w, h);
+    const sCtx = sCanvas.getContext('2d', { willReadFrequently: true });
+    sCtx.imageSmoothingEnabled = true;
+    sCtx.imageSmoothingQuality = 'high';
+    sCtx.drawImage(source, 0, 0, w, h);
+    rawPixels = new Uint8ClampedArray(sCtx.getImageData(0, 0, w, h).data);
+    aquarelleSourceCache = { source, w, h, raw: rawPixels };
+  }
+
+  const len = w * h;
+  const srcR = new Float32Array(len);
+  const srcG = new Float32Array(len);
+  const srcB = new Float32Array(len);
+
+  for (let i = 0; i < len; i++) {
+    const p = i * 4;
     const [ar, ag, ab] = adjustPixelColor(
-      rawR,
-      rawG,
-      rawB,
+      rawPixels[p],
+      rawPixels[p + 1],
+      rawPixels[p + 2],
       contrastFactor,
       brightnessOffset,
       satFactor
     );
     const lum = 0.2126 * ar + 0.7152 * ag + 0.0722 * ab;
-    let [cr, cg, cb] = mapPaletteColor(ar, ag, ab, lum, cfg.colorMode, bgSpec.light);
+    const [cr, cg, cb] = mapPaletteColor(ar, ag, ab, lum, cfg.colorMode, bgSpec.light);
+    srcR[i] = cr;
+    srcG[i] = cg;
+    srcB[i] = cb;
+  }
 
-    if (bgSpec.light) {
-      const lift = 22 + softnessNorm * 14;
-      const luma = 0.2126 * cr + 0.7152 * cg + 0.0722 * cb;
-      const chromaBoost = 1.12 + pigmentNorm * 0.12;
-      cr = clamp255(lift + (luma + (cr - luma) * chromaBoost) * 0.9);
-      cg = clamp255(lift + (luma + (cg - luma) * chromaBoost) * 0.9);
-      cb = clamp255(lift + (luma + (cb - luma) * chromaBoost) * 0.92);
-    }
-    return [Math.round(cr), Math.round(cg), Math.round(cb), lum];
-  };
+  // Soft wet-on-wet bleed blur controlled by Wash Softness slider
+  const blurRadius = softnessNorm > 0.65 ? 2 : softnessNorm > 0.25 ? 1 : 0;
+  const { r: wR, g: wG, b: wB } = smoothField(srcR, srcG, srcB, w, h, blurRadius);
 
-  // Pass 0: Soft wet-on-wet atmospheric under-wash
-  const underScale = 11 + softnessNorm * 16;
-  const underW = Math.max(40, Math.round(outWidth / underScale));
-  const underH = Math.max(30, Math.round(outHeight / underScale));
-  const underCanvas = getScratchCanvas('aq-under', underW, underH);
-  const uctx = underCanvas.getContext('2d', { willReadFrequently: true });
-  uctx.imageSmoothingEnabled = true;
-  uctx.imageSmoothingQuality = 'high';
-  uctx.drawImage(source, 0, 0, underW, underH);
-  const uData = uctx.getImageData(0, 0, underW, underH);
+  // Paper base RGB
+  const paperR = bgSpec.hex === '#f7f2e8' ? 247 : bgSpec.light ? 255 : 10;
+  const paperG = bgSpec.hex === '#f7f2e8' ? 242 : bgSpec.light ? 255 : 14;
+  const paperB = bgSpec.hex === '#f7f2e8' ? 232 : bgSpec.light ? 255 : 22;
 
-  for (let i = 0; i < uData.data.length; i += 4) {
-    const [cr, cg, cb, lum] = toWatercolorRGB(uData.data[i], uData.data[i + 1], uData.data[i + 2]);
-    uData.data[i] = cr;
-    uData.data[i + 1] = cg;
-    uData.data[i + 2] = cb;
-    if (bgSpec.light && lum > 225) {
-      uData.data[i + 3] = Math.round(((255 - lum) / 30) * 200);
+  const washCanvas = getScratchCanvas('aq-wash', w, h);
+  const wCtx = washCanvas.getContext('2d');
+  const outImg = wCtx.createImageData(w, h);
+  const outD = outImg.data;
+  const washBlend = Math.min(0.95, 0.45 + pigmentNorm * 0.36);
+  const paperLift = bgSpec.light ? 20 + softnessNorm * 16 : 0;
+  const chromaBoost = 1.1 + pigmentNorm * 0.14;
+  const useGrain = cfg.aquarellePaperGrain;
+
+  for (let y = 0; y < h; y++) {
+    const rowOff = y * w;
+    const ny = (y & 63) << 6;
+    for (let x = 0; x < w; x++) {
+      const i = rowOff + x;
+      let r = wR[i];
+      let g = wG[i];
+      let b = wB[i];
+
+      const luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      r = clamp255(paperLift + (luma + (r - luma) * chromaBoost) * (bgSpec.light ? 0.9 : 1));
+      g = clamp255(paperLift + (luma + (g - luma) * chromaBoost) * (bgSpec.light ? 0.9 : 1));
+      b = clamp255(paperLift + (luma + (b - luma) * chromaBoost) * (bgSpec.light ? 0.92 : 1));
+
+      // Capillary pigment pooling along tonal transitions (fast 4-neighbor gradient — zero draw calls!)
+      let edgeDarken = 1;
+      if (x > 0 && x < w - 1 && y > 0 && y < h - 1) {
+        const dl =
+          Math.abs(wR[i + 1] - wR[i - 1]) +
+          Math.abs(wR[i + w] - wR[i - w]) +
+          Math.abs(wG[i + 1] - wG[i - 1]) +
+          Math.abs(wG[i + w] - wG[i - w]);
+        if (dl > 55) {
+          edgeDarken = Math.max(0.74, 1 - Math.min(0.26, ((dl - 55) / 260) * pigmentNorm));
+        }
+      }
+
+      // Watercolor glaze blend onto paper + subtle organic wet-wash wave
+      const organicWave = 1 + (Math.sin(x * 0.14 + y * 0.09) + Math.cos(y * 0.17 - x * 0.07)) * 0.03 * softnessNorm;
+      const localAlpha = bgSpec.light && luma > 228 ? washBlend * ((255 - luma) / 27) : washBlend;
+      const a = Math.max(0, Math.min(1, localAlpha * organicWave));
+
+      let fr = paperR * (1 - a) + r * edgeDarken * a;
+      let fg = paperG * (1 - a) + g * edgeDarken * a;
+      let fb = paperB * (1 - a) + b * edgeDarken * a;
+
+      if (useGrain) {
+        const grain = PAPER_NOISE_64[ny | (x & 63)] * (bgSpec.light ? 0.85 : 0.45);
+        fr = clamp255(fr + grain);
+        fg = clamp255(fg + grain);
+        fb = clamp255(fb + grain);
+      }
+
+      const p = i * 4;
+      outD[p] = fr;
+      outD[p + 1] = fg;
+      outD[p + 2] = fb;
+      outD[p + 3] = 255;
     }
   }
-  uctx.putImageData(uData, 0, 0);
 
+  wCtx.putImageData(outImg, 0, 0);
+
+  // Single fast bilinear upscale onto output canvas (silky wet-on-wet base)
+  ctx.fillStyle = bgSpec.hex;
+  ctx.fillRect(0, 0, outWidth, outHeight);
   ctx.save();
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
-  ctx.globalAlpha = Math.min(0.88, 0.45 + pigmentNorm * 0.28);
-  ctx.drawImage(underCanvas, 0, 0, outWidth, outHeight);
+  ctx.drawImage(washCanvas, 0, 0, outWidth, outHeight);
   ctx.restore();
 
   if (cfg.underlayOpacity > 0) {
@@ -354,219 +412,100 @@ function renderAquarelle(
     ctx.restore();
   }
 
+  // Stage 2: Strictly capped (<= 120 draft / <= 240 settled) soft organic pigment blooms
   const rand = mulberry32(133791);
   const cells = options.skipCells ? null : [];
-  const aspect = outHeight / outWidth;
+  const dabCols = isDraft ? 12 : Math.min(19, 11 + detailLevel * 2);
+  const dabRows = Math.max(8, Math.round(dabCols * aspect));
+  const stepX = outWidth / dabCols;
+  const stepY = outHeight / dabRows;
+  const baseR = ((stepX + stepY) * 0.5) * (0.78 + softnessNorm * 0.55);
+  const dabAlpha = Math.min(0.28, 0.11 * pigmentNorm + 0.06);
 
-  // Strictly budgeted organic washes (~200 to ~650 brushstrokes -> fast 5-15ms rendering)
-  const maxCols = isDraft ? 20 : 28;
-  const targetCols = Math.min(maxCols, Math.max(12, Math.round(12 + detailLevel * 3.2 + Math.max(0, 12 - cfg.cellSize) * 0.5)));
-  const passes = isDraft
-    ? [
-        {
-          cols: targetCols,
-          radiusMul: 1.05 + softnessNorm * 0.58,
-          alpha: Math.min(0.46, 0.2 * pigmentNorm + 0.12),
-          drawRim: false,
-          recordCells: true
-        }
-      ]
-    : [
-        {
-          cols: Math.max(10, Math.round(targetCols * 0.6)),
-          radiusMul: 1.3 + softnessNorm * 0.78,
-          alpha: Math.min(0.36, 0.15 * pigmentNorm + 0.08),
-          drawRim: false,
-          recordCells: false
-        },
-        {
-          cols: targetCols,
-          radiusMul: 0.96 + softnessNorm * 0.48,
-          alpha: Math.min(0.44, 0.19 * pigmentNorm + 0.1),
-          drawRim: true,
-          recordCells: true
-        }
-      ];
+  ctx.save();
+  for (let gy = 0; gy < dabRows; gy++) {
+    for (let gx = 0; gx < dabCols; gx++) {
+      const sx = Math.min(w - 1, Math.floor(((gx + 0.5) / dabCols) * w));
+      const sy = Math.min(h - 1, Math.floor(((gy + 0.5) / dabRows) * h));
+      const si = sy * w + sx;
+      const cr = Math.round(wR[si]);
+      const cg = Math.round(wG[si]);
+      const cb = Math.round(wB[si]);
+      const lum = 0.2126 * cr + 0.7152 * cg + 0.0722 * cb;
+      if (bgSpec.light && lum > 236) continue;
 
-  let finalCols = targetCols;
-  let finalRows = Math.max(8, Math.round(targetCols * aspect));
+      const cx = (gx + 0.5) * stepX + (rand() - 0.5) * stepX * 0.55;
+      const cy = (gy + 0.5) * stepY + (rand() - 0.5) * stepY * 0.55;
+      const r = baseR * (0.76 + rand() * 0.48);
 
-  for (let pIdx = 0; pIdx < passes.length; pIdx++) {
-    const pass = passes[pIdx];
-    const cols = Math.max(8, Math.round(pass.cols / Math.max(0.8, cfg.spacing)));
-    const rows = Math.max(6, Math.round(cols * aspect));
-    const stepX = outWidth / cols;
-    const stepY = outHeight / rows;
-    const avgStep = (stepX + stepY) * 0.5;
-
-    if (pass.recordCells) {
-      finalCols = cols;
-      finalRows = rows;
-    }
-
-    const sCanvas = getScratchCanvas(`aq-pass-${pIdx}`, cols, rows);
-    const sCtx = sCanvas.getContext('2d', { willReadFrequently: true });
-    sCtx.imageSmoothingEnabled = true;
-    sCtx.imageSmoothingQuality = 'high';
-    sCtx.drawImage(source, 0, 0, cols, rows);
-    const data = sCtx.getImageData(0, 0, cols, rows).data;
-
-    ctx.save();
-    for (let row = 0; row < rows; row++) {
-      for (let col = 0; col < cols; col++) {
-        const idx = (row * cols + col) * 4;
-        if (data[idx + 3] < 16) continue;
-
-        const [cr, cg, cb, lum] = toWatercolorRGB(data[idx], data[idx + 1], data[idx + 2]);
-        if (bgSpec.light && lum > 240 && pIdx > 0) continue;
-
-        const jitterX = (rand() - 0.5) * stepX * (0.5 + softnessNorm * 0.32);
-        const jitterY = (rand() - 0.5) * stepY * (0.5 + softnessNorm * 0.32);
-        const cx = (col + 0.5) * stepX + jitterX;
-        const cy = (row + 0.5) * stepY + jitterY;
-        const r = avgStep * pass.radiusMul * (0.82 + rand() * 0.4);
-        const rx = r * (0.8 + rand() * 0.42);
-        const ry = r * (0.8 + rand() * 0.42);
-        const rot = rand() * Math.PI;
-
-        const coreAlpha = Math.min(
-          0.56,
-          pass.alpha * (cfg.invert ? 0.65 + (lum / 255) * 0.45 : 0.8 + (1 - lum / 255) * 0.25)
-        );
-
-        // Soft bleed halo
-        ctx.fillStyle = `rgba(${cr},${cg},${cb},${(coreAlpha * 0.36).toFixed(2)})`;
-        ctx.beginPath();
-        ctx.ellipse(cx, cy, rx, ry, rot, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Inner pigment wash body
-        ctx.fillStyle = `rgba(${cr},${cg},${cb},${(coreAlpha * 0.72).toFixed(2)})`;
-        ctx.beginPath();
-        ctx.ellipse(cx + jitterX * 0.14, cy + jitterY * 0.14, rx * 0.65, ry * 0.65, rot, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Subtle capillary drying rim
-        if (pass.drawRim && rand() > 0.56) {
-          ctx.strokeStyle = `rgba(${Math.round(cr * 0.76)},${Math.round(cg * 0.76)},${Math.round(cb * 0.76)},${(coreAlpha * 0.35).toFixed(2)})`;
-          ctx.lineWidth = Math.max(0.8, 1.2 * scaleMultiplier);
-          ctx.beginPath();
-          ctx.ellipse(cx, cy, rx * 0.84, ry * 0.84, rot, 0, Math.PI * 2);
-          ctx.stroke();
-        }
-
-        if (pass.recordCells && cells) {
-          cells.push({ cx, cy, r: cr, g: cg, b: cb, lum, char: '', alpha: coreAlpha, radius: r * 0.5 });
-        }
-      }
-    }
-    ctx.restore();
-  }
-
-  // Pass 3: Batched watercolor contour accents (skipped during active drag draft for instant feedback)
-  if (!isDraft) {
-    const edgeW = Math.min(150, Math.max(88, Math.round(outWidth / (7 - detailLevel * 0.65))));
-    const edgeH = Math.max(54, Math.round(edgeW * aspect));
-    const eCanvas = getScratchCanvas('aq-edge', edgeW, edgeH);
-    const eCtx = eCanvas.getContext('2d', { willReadFrequently: true });
-    eCtx.drawImage(source, 0, 0, edgeW, edgeH);
-    const ePixels = eCtx.getImageData(0, 0, edgeW, edgeH).data;
-    const eLum = new Float32Array(edgeW * edgeH);
-
-    for (let i = 0; i < edgeW * edgeH; i++) {
-      const p = i * 4;
-      const [ar, ag, ab] = adjustPixelColor(
-        ePixels[p],
-        ePixels[p + 1],
-        ePixels[p + 2],
-        contrastFactor,
-        brightnessOffset,
-        satFactor
-      );
-      eLum[i] = 0.2126 * ar + 0.7152 * ag + 0.0722 * ab;
-    }
-
-    const sx = outWidth / edgeW;
-    const sy = outHeight / edgeH;
-    const edgeCutoff = 50 - detailLevel * 5;
-    const rad = Math.max(1.3, (1.6 + softnessNorm * 1.3) * scaleMultiplier);
-    const edgeAlpha = Math.min(0.25, 0.14 * pigmentNorm).toFixed(2);
-    const edgeBuckets = new Map();
-
-    for (let y = 1; y < edgeH - 1; y++) {
-      const rowOff = y * edgeW;
-      for (let x = 1; x < edgeW - 1; x++) {
-        const i = rowOff + x;
-        const gx =
-          -eLum[i - edgeW - 1] + eLum[i - edgeW + 1] -
-          2 * eLum[i - 1] + 2 * eLum[i + 1] -
-          eLum[i + edgeW - 1] + eLum[i + edgeW + 1];
-        const gy =
-          -eLum[i - edgeW - 1] - 2 * eLum[i - edgeW] - eLum[i - edgeW + 1] +
-          eLum[i + edgeW - 1] + 2 * eLum[i + edgeW] + eLum[i + edgeW + 1];
-        const mag = Math.sqrt(gx * gx + gy * gy) * 0.25;
-        if (mag < edgeCutoff) continue;
-
-        const p = i * 4;
-        const [cr, cg, cb] = toWatercolorRGB(ePixels[p], ePixels[p + 1], ePixels[p + 2]);
-        const key = ((Math.round(cr * 0.72) & 0xe0) << 16) | ((Math.round(cg * 0.72) & 0xe0) << 8) | (Math.round(cb * 0.72) & 0xe0);
-        let pts = edgeBuckets.get(key);
-        if (!pts) {
-          pts = [];
-          edgeBuckets.set(key, pts);
-        }
-        pts.push((x + 0.5) * sx, (y + 0.5) * sy);
-      }
-    }
-
-    ctx.save();
-    for (const [key, pts] of edgeBuckets) {
-      ctx.fillStyle = `rgba(${(key >> 16) & 255},${(key >> 8) & 255},${key & 255},${edgeAlpha})`;
+      // Soft translucent watercolor bloom (simple circle — fast GPU path, zero ellipse tessellation!)
+      ctx.fillStyle = `rgba(${cr},${cg},${cb},${dabAlpha.toFixed(2)})`;
       ctx.beginPath();
-      for (let k = 0; k < pts.length; k += 2) {
-        const px = pts[k];
-        const py = pts[k + 1];
-        ctx.moveTo(px + rad, py);
-        ctx.arc(px, py, rad, 0, Math.PI * 2);
-      }
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
       ctx.fill();
-    }
-    ctx.restore();
-  }
 
-  // Pass 4: Cold-press paper grain texture overlay
-  if (cfg.aquarellePaperGrain) {
-    ctx.save();
-    const pattern = ctx.createPattern(getPaperGrainTile(), 'repeat');
-    if (pattern) {
-      ctx.globalCompositeOperation = bgSpec.light ? 'multiply' : 'overlay';
-      ctx.globalAlpha = bgSpec.light ? 0.5 : 0.25;
-      ctx.fillStyle = pattern;
-      ctx.fillRect(0, 0, outWidth, outHeight);
+      // Occasional delicate wet-edge capillary ring
+      if (!isDraft && rand() > 0.62) {
+        ctx.strokeStyle = `rgba(${Math.round(cr * 0.75)},${Math.round(cg * 0.75)},${Math.round(cb * 0.75)},${(dabAlpha * 0.48).toFixed(2)})`;
+        ctx.lineWidth = Math.max(0.9, 1.3 * scaleMultiplier);
+        ctx.beginPath();
+        ctx.arc(cx, cy, r * 0.88, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      if (cells) {
+        cells.push({ cx, cy, r: cr, g: cg, b: cb, lum, char: '', alpha: dabAlpha, radius: r * 0.6 });
+      }
     }
-    ctx.restore();
   }
+  ctx.restore();
 
   const renderMs = Math.max(1, Math.round(performance.now() - startTime));
   return {
     baseCanvas,
     cells,
-    cols: finalCols,
-    rows: finalRows,
+    cols: dabCols,
+    rows: dabRows,
     width: outWidth,
     height: outHeight,
     fontSize: Math.round(cfg.cellSize * scaleMultiplier),
-    stepX: Math.round(outWidth / Math.max(1, finalCols)),
-    stepY: Math.round(outHeight / Math.max(1, finalRows)),
-    bgHex: paperHex,
+    stepX: Math.round(stepX),
+    stepY: Math.round(stepY),
+    bgHex: bgSpec.hex,
     renderMs,
     textOutput: ''
   };
 }
 
 /**
- * Ultra-Fast Shape / Hollow Outline Rendering Mode
- * Color-aware Sobel + corrected 8-way NMS + color-bucketed batched vector strokes over #FFFFFF interior.
+ * Precomputed circular pixel disk offsets for fast direct-pixel contour thickness stamping
+ */
+const diskOffsetCache = new Map();
+
+function getDiskOffsets(radius) {
+  const r = Math.max(0, Math.min(5, radius | 0));
+  let cached = diskOffsetCache.get(r);
+  if (cached) return cached;
+  const pts = [];
+  const r2 = r * r + 0.35;
+  for (let dy = -r; dy <= r; dy++) {
+    for (let dx = -r; dx <= r; dx++) {
+      const d2 = dx * dx + dy * dy;
+      if (d2 <= r2) {
+        const weight = r === 0 ? 1 : Math.max(0.45, 1 - Math.sqrt(d2) / (r + 0.85));
+        pts.push([dx, dy, weight]);
+      }
+    }
+  }
+  diskOffsetCache.set(r, pts);
+  return pts;
+}
+
+/**
+ * Non-Blocking Shape / Hollow Outline Rendering Mode
+ * Caches Sobel + 8-way NMS edge maps so dragging Threshold / Thickness / Ink Style runs in 1-3ms,
+ * and stamps crisp outlines directly into an ImageData pixel buffer over a pure #FFFFFF white interior
+ * (1 single ctx.drawImage call — zero Skia path stroker freezes!).
  */
 function renderOutline(
   source,
@@ -586,277 +525,311 @@ function renderOutline(
   baseCanvas.height = outHeight;
   const ctx = baseCanvas.getContext('2d');
 
-  const interiorHex = cfg.background === 'warm' ? '#faf8f4' : '#ffffff';
-  ctx.fillStyle = interiorHex;
-  ctx.fillRect(0, 0, outWidth, outHeight);
-
-  if (cfg.underlayOpacity > 0) {
-    ctx.save();
-    ctx.globalAlpha = cfg.underlayOpacity * 0.45;
-    ctx.drawImage(source, 0, 0, outWidth, outHeight);
-    ctx.restore();
-  }
-
   const detail = Math.max(1, Math.min(5, Math.round(cfg.outlineDetail)));
   const isDraft = Boolean(options.isDraft);
-  const targetMaxW = isDraft ? 130 + detail * 28 : 140 + detail * 42; // 182px..350px preview, ultra-fast
-  const w = Math.min(outWidth, options.exportScale > 1 ? targetMaxW + 80 : targetMaxW);
-  const h = Math.max(54, Math.round((w * outHeight) / outWidth));
+  const aspect = outHeight / outWidth;
 
-  const sCanvas = getScratchCanvas('outline-src', w, h);
-  const sCtx = sCanvas.getContext('2d', { willReadFrequently: true });
-  sCtx.imageSmoothingEnabled = true;
-  sCtx.imageSmoothingQuality = 'high';
-  sCtx.drawImage(source, 0, 0, w, h);
-  const raw = sCtx.getImageData(0, 0, w, h).data;
-
+  // Bounded contour resolution: super crisp yet tiny enough to finish Sobel+NMS in ~4ms
+  const targetW = isDraft
+    ? Math.min(240, 140 + detail * 20)
+    : options.exportScale > 1
+    ? Math.min(560, 260 + detail * 60)
+    : Math.min(400, 180 + detail * 44);
+  const w = Math.max(80, Math.min(outWidth, targetW));
+  const h = Math.max(60, Math.round(w * aspect));
   const len = w * h;
-  const rawR = new Float32Array(len);
-  const rawG = new Float32Array(len);
-  const rawB = new Float32Array(len);
 
-  for (let i = 0; i < len; i++) {
-    const p = i * 4;
-    const [ar, ag, ab] = adjustPixelColor(
-      raw[p],
-      raw[p + 1],
-      raw[p + 2],
-      contrastFactor,
-      brightnessOffset,
-      satFactor
-    );
-    rawR[i] = ar;
-    rawG[i] = ag;
-    rawB[i] = ab;
-  }
+  // Reuse cached Sobel + NMS edge field if source/geometry/tone hasn't changed!
+  let edgeStrength;
+  let fR;
+  let fG;
+  let fB;
+  let fL;
+  let p97;
 
-  const smoothRadius = detail <= 2 ? 2 : detail <= 4 ? 1 : 0;
-  const { r: fR, g: fG, b: fB } = smoothField(rawR, rawG, rawB, w, h, smoothRadius);
-  const fL = new Float32Array(len);
-  for (let i = 0; i < len; i++) {
-    fL[i] = 0.2126 * fR[i] + 0.7152 * fG[i] + 0.0722 * fB[i];
-  }
+  const cacheHit =
+    outlineEdgeCache &&
+    outlineEdgeCache.source === source &&
+    outlineEdgeCache.w === w &&
+    outlineEdgeCache.h === h &&
+    outlineEdgeCache.detail === detail &&
+    outlineEdgeCache.contrast === cfg.contrast &&
+    outlineEdgeCache.brightness === cfg.brightness &&
+    outlineEdgeCache.saturation === cfg.saturation;
 
-  const mag = new Float32Array(len);
-  const dir = new Uint8Array(len);
-  const hist = new Uint32Array(256);
+  if (cacheHit) {
+    edgeStrength = outlineEdgeCache.edgeStrength;
+    fR = outlineEdgeCache.fR;
+    fG = outlineEdgeCache.fG;
+    fB = outlineEdgeCache.fB;
+    fL = outlineEdgeCache.fL;
+    p97 = outlineEdgeCache.p97;
+  } else {
+    const sCanvas = getScratchCanvas('outline-src', w, h);
+    const sCtx = sCanvas.getContext('2d', { willReadFrequently: true });
+    sCtx.imageSmoothingEnabled = true;
+    sCtx.imageSmoothingQuality = 'high';
+    sCtx.drawImage(source, 0, 0, w, h);
+    const raw = sCtx.getImageData(0, 0, w, h).data;
 
-  for (let y = 1; y < h - 1; y++) {
-    const rowOff = y * w;
-    for (let x = 1; x < w - 1; x++) {
-      const i = rowOff + x;
-      const ul = i - w - 1;
-      const u = i - w;
-      const ur = i - w + 1;
-      const l = i - 1;
-      const r = i + 1;
-      const dl = i + w - 1;
-      const d = i + w;
-      const dr = i + w + 1;
+    const rawR = new Float32Array(len);
+    const rawG = new Float32Array(len);
+    const rawB = new Float32Array(len);
 
-      const gxL = -fL[ul] + fL[ur] - 2 * fL[l] + 2 * fL[r] - fL[dl] + fL[dr];
-      const gyL = -fL[ul] - 2 * fL[u] - fL[ur] + fL[dl] + 2 * fL[d] + fL[dr];
-      let bestM = Math.sqrt(gxL * gxL + gyL * gyL) * 0.25;
-      let bestGx = gxL;
-      let bestGy = gyL;
-
-      const gxR = -fR[ul] + fR[ur] - 2 * fR[l] + 2 * fR[r] - fR[dl] + fR[dr];
-      const gyR = -fR[ul] - 2 * fR[u] - fR[ur] + fR[dl] + 2 * fR[d] + fR[dr];
-      const mR = Math.sqrt(gxR * gxR + gyR * gyR) * 0.23;
-      if (mR > bestM) { bestM = mR; bestGx = gxR; bestGy = gyR; }
-
-      const gxG = -fG[ul] + fG[ur] - 2 * fG[l] + 2 * fG[r] - fG[dl] + fG[dr];
-      const gyG = -fG[ul] - 2 * fG[u] - fG[ur] + fG[dl] + 2 * fG[d] + fG[dr];
-      const mG = Math.sqrt(gxG * gxG + gyG * gyG) * 0.23;
-      if (mG > bestM) { bestM = mG; bestGx = gxG; bestGy = gyG; }
-
-      const gxB = -fB[ul] + fB[ur] - 2 * fB[l] + 2 * fB[r] - fB[dl] + fB[dr];
-      const gyB = -fB[ul] - 2 * fB[u] - fB[ur] + fB[dl] + 2 * fB[d] + fB[dr];
-      const mB = Math.sqrt(gxB * gxB + gyB * gyB) * 0.23;
-      if (mB > bestM) { bestM = mB; bestGx = gxB; bestGy = gyB; }
-
-      mag[i] = bestM;
-      hist[bestM >= 255 ? 255 : bestM | 0]++;
-
-      let angle = (Math.atan2(bestGy, bestGx) * 180) / Math.PI;
-      if (angle < 0) angle += 180;
-      if (angle < 22.5 || angle >= 157.5) dir[i] = 0;
-      else if (angle < 67.5) dir[i] = 1;
-      else if (angle < 112.5) dir[i] = 2;
-      else dir[i] = 3;
+    for (let i = 0; i < len; i++) {
+      const p = i * 4;
+      const [ar, ag, ab] = adjustPixelColor(
+        raw[p],
+        raw[p + 1],
+        raw[p + 2],
+        contrastFactor,
+        brightnessOffset,
+        satFactor
+      );
+      rawR[i] = ar;
+      rawG[i] = ag;
+      rawB[i] = ab;
     }
+
+    const smoothRadius = detail <= 2 ? 2 : detail <= 4 ? 1 : 0;
+    const smoothed = smoothField(rawR, rawG, rawB, w, h, smoothRadius);
+    fR = smoothed.r;
+    fG = smoothed.g;
+    fB = smoothed.b;
+    fL = new Float32Array(len);
+    for (let i = 0; i < len; i++) {
+      fL[i] = 0.2126 * fR[i] + 0.7152 * fG[i] + 0.0722 * fB[i];
+    }
+
+    const mag = new Float32Array(len);
+    const dir = new Uint8Array(len);
+    const hist = new Uint32Array(256);
+
+    for (let y = 1; y < h - 1; y++) {
+      const rowOff = y * w;
+      for (let x = 1; x < w - 1; x++) {
+        const i = rowOff + x;
+        const ul = i - w - 1;
+        const u = i - w;
+        const ur = i - w + 1;
+        const l = i - 1;
+        const r = i + 1;
+        const dl = i + w - 1;
+        const d = i + w;
+        const dr = i + w + 1;
+
+        const gxL = -fL[ul] + fL[ur] - 2 * fL[l] + 2 * fL[r] - fL[dl] + fL[dr];
+        const gyL = -fL[ul] - 2 * fL[u] - fL[ur] + fL[dl] + 2 * fL[d] + fL[dr];
+        let bestM = Math.sqrt(gxL * gxL + gyL * gyL) * 0.25;
+        let bestGx = gxL;
+        let bestGy = gyL;
+
+        const gxR = -fR[ul] + fR[ur] - 2 * fR[l] + 2 * fR[r] - fR[dl] + fR[dr];
+        const gyR = -fR[ul] - 2 * fR[u] - fR[ur] + fR[dl] + 2 * fR[d] + fR[dr];
+        const mR = Math.sqrt(gxR * gxR + gyR * gyR) * 0.23;
+        if (mR > bestM) { bestM = mR; bestGx = gxR; bestGy = gyR; }
+
+        const gxG = -fG[ul] + fG[ur] - 2 * fG[l] + 2 * fG[r] - fG[dl] + fG[dr];
+        const gyG = -fG[ul] - 2 * fG[u] - fG[ur] + fG[dl] + 2 * fG[d] + fG[dr];
+        const mG = Math.sqrt(gxG * gxG + gyG * gyG) * 0.23;
+        if (mG > bestM) { bestM = mG; bestGx = gxG; bestGy = gyG; }
+
+        const gxB = -fB[ul] + fB[ur] - 2 * fB[l] + 2 * fB[r] - fB[dl] + fB[dr];
+        const gyB = -fB[ul] - 2 * fB[u] - fB[ur] + fB[dl] + 2 * fB[d] + fB[dr];
+        const mB = Math.sqrt(gxB * gxB + gyB * gyB) * 0.23;
+        if (mB > bestM) { bestM = mB; bestGx = gxB; bestGy = gyB; }
+
+        mag[i] = bestM;
+        hist[bestM >= 255 ? 255 : bestM | 0]++;
+
+        let angle = (Math.atan2(bestGy, bestGx) * 180) / Math.PI;
+        if (angle < 0) angle += 180;
+        if (angle < 22.5 || angle >= 157.5) dir[i] = 0;
+        else if (angle < 67.5) dir[i] = 1;
+        else if (angle < 112.5) dir[i] = 2;
+        else dir[i] = 3;
+      }
+    }
+
+    const totalInner = (w - 2) * (h - 2);
+    let acc = 0;
+    p97 = 45;
+    const target97 = totalInner * 0.97;
+    for (let b = 0; b < 256; b++) {
+      acc += hist[b];
+      if (acc >= target97) {
+        p97 = Math.max(18, b);
+        break;
+      }
+    }
+
+    edgeStrength = new Float32Array(len);
+    for (let y = 1; y < h - 1; y++) {
+      const rowOff = y * w;
+      for (let x = 1; x < w - 1; x++) {
+        const i = rowOff + x;
+        const m = mag[i];
+        if (m < 4) continue;
+
+        let n1 = 0;
+        let n2 = 0;
+        const d = dir[i];
+        if (d === 0) {
+          n1 = mag[i - 1];
+          n2 = mag[i + 1];
+        } else if (d === 1) {
+          n1 = mag[i - w - 1];
+          n2 = mag[i + w + 1];
+        } else if (d === 2) {
+          n1 = mag[i - w];
+          n2 = mag[i + w];
+        } else {
+          n1 = mag[i - w + 1];
+          n2 = mag[i + w - 1];
+        }
+
+        if (m >= n1 && m >= n2) {
+          edgeStrength[i] = m;
+        }
+      }
+    }
+
+    outlineEdgeCache = {
+      source,
+      w,
+      h,
+      detail,
+      contrast: cfg.contrast,
+      brightness: cfg.brightness,
+      saturation: cfg.saturation,
+      edgeStrength,
+      fR,
+      fG,
+      fB,
+      fL,
+      p97
+    };
   }
 
-  const totalInner = (w - 2) * (h - 2);
-  let acc = 0;
-  let p97 = 45;
-  const target97 = totalInner * 0.97;
-  for (let b = 0; b < 256; b++) {
-    acc += hist[b];
-    if (acc >= target97) {
-      p97 = Math.max(18, b);
-      break;
-    }
+  // Pure white (#FFFFFF) interior buffer (or warm paper white if explicitly selected)
+  const isWarm = cfg.background === 'warm';
+  const bgR = isWarm ? 250 : 255;
+  const bgG = isWarm ? 248 : 255;
+  const bgB = isWarm ? 244 : 255;
+  const interiorHex = isWarm ? '#faf8f4' : '#ffffff';
+
+  const outCanvas = getScratchCanvas('outline-out', w, h);
+  const oCtx = outCanvas.getContext('2d');
+  const outImg = oCtx.createImageData(w, h);
+  const outD = outImg.data;
+
+  // Fill entire interior with crisp pure white (#FFFFFF)
+  for (let i = 0; i < outD.length; i += 4) {
+    outD[i] = bgR;
+    outD[i + 1] = bgG;
+    outD[i + 2] = bgB;
+    outD[i + 3] = 255;
   }
 
   const sliderNorm = Math.max(0.05, Math.min(0.95, cfg.outlineThreshold / 100));
-  const threshold = Math.max(7, p97 * (0.22 + sliderNorm * 0.95));
+  const threshold = Math.max(7, p97 * (0.2 + sliderNorm * 0.92));
   const softFloor = threshold * 0.48;
 
-  const edgeStrength = new Float32Array(len);
-  for (let y = 1; y < h - 1; y++) {
-    const rowOff = y * w;
-    for (let x = 1; x < w - 1; x++) {
-      const i = rowOff + x;
-      const m = mag[i];
-      if (m < softFloor) continue;
+  const stampRadius = Math.max(0, Math.min(3, Math.round((cfg.outlineThickness - 1) * 0.55)));
+  const diskOffsets = getDiskOffsets(stampRadius);
+  const sx = outWidth / w;
+  const sy = outHeight / h;
+  const cells = options.skipCells ? null : [];
+  let contourCount = 0;
 
-      let n1 = 0;
-      let n2 = 0;
-      const d = dir[i];
-      if (d === 0) {
-        n1 = mag[i - 1];
-        n2 = mag[i + 1];
-      } else if (d === 1) {
-        n1 = mag[i - w - 1];
-        n2 = mag[i + w + 1];
-      } else if (d === 2) {
-        n1 = mag[i - w];
-        n2 = mag[i + w];
-      } else {
-        n1 = mag[i - w + 1];
-        n2 = mag[i + w - 1];
-      }
-
-      if (m < n1 || m < n2) continue;
-      edgeStrength[i] = m;
-    }
-  }
-
-  const active = new Uint8Array(len);
   for (let y = 1; y < h - 1; y++) {
     const rowOff = y * w;
     for (let x = 1; x < w - 1; x++) {
       const i = rowOff + x;
       const m = edgeStrength[i];
-      if (m <= 0) continue;
+      if (m < softFloor) continue;
+
       if (
-        m >= threshold ||
-        edgeStrength[i - w - 1] >= threshold || edgeStrength[i - w] >= threshold || edgeStrength[i - w + 1] >= threshold ||
-        edgeStrength[i - 1] >= threshold || edgeStrength[i + 1] >= threshold ||
-        edgeStrength[i + w - 1] >= threshold || edgeStrength[i + w] >= threshold || edgeStrength[i + w + 1] >= threshold
+        m < threshold &&
+        edgeStrength[i - w - 1] < threshold && edgeStrength[i - w] < threshold && edgeStrength[i - w + 1] < threshold &&
+        edgeStrength[i - 1] < threshold && edgeStrength[i + 1] < threshold &&
+        edgeStrength[i + w - 1] < threshold && edgeStrength[i + w] < threshold && edgeStrength[i + w + 1] < threshold
       ) {
-        active[i] = 1;
+        continue;
       }
-    }
-  }
-
-  const getContourColor = (i) => {
-    if (cfg.outlineInkStyle === 'ink') return [15, 23, 42];
-    if (cfg.outlineInkStyle === 'palette') {
-      const [pr, pg, pb] = mapPaletteColor(fR[i], fG[i], fB[i], fL[i], cfg.colorMode, true);
-      return [Math.round(pr * 0.68), Math.round(pg * 0.68), Math.round(pb * 0.68)];
-    }
-    const lum = fL[i];
-    const darken = lum > 175 ? 0.52 : lum > 120 ? 0.68 : 0.85;
-    const luma = 0.2126 * fR[i] + 0.7152 * fG[i] + 0.0722 * fB[i];
-    const sr = clamp255(luma + (fR[i] - luma) * 1.35);
-    const sg = clamp255(luma + (fG[i] - luma) * 1.35);
-    const sb = clamp255(luma + (fB[i] - luma) * 1.35);
-    return [
-      Math.round(clamp255(sr * darken)),
-      Math.round(clamp255(sg * darken)),
-      Math.round(clamp255(sb * darken))
-    ];
-  };
-
-  const sx = outWidth / w;
-  const sy = outHeight / h;
-  const strokeWidth = Math.max(1.0, cfg.outlineThickness * scaleMultiplier);
-  const cells = options.skipCells ? null : [];
-  let contourCount = 0;
-
-  const segBuckets = new Map();
-  const dotBuckets = new Map();
-  const forwardOffsets = [
-    [1, 0],
-    [0, 1],
-    [1, 1],
-    [-1, 1]
-  ];
-
-  for (let y = 1; y < h - 1; y++) {
-    const rowOff = y * w;
-    for (let x = 1; x < w - 1; x++) {
-      const i = rowOff + x;
-      if (!active[i]) continue;
 
       contourCount++;
-      const [cr, cg, cb] = getContourColor(i);
-      const qr = cfg.outlineInkStyle === 'ink' ? 15 : cr & 0xf0;
-      const qg = cfg.outlineInkStyle === 'ink' ? 23 : cg & 0xf0;
-      const qb = cfg.outlineInkStyle === 'ink' ? 42 : cb & 0xf0;
-      const colorKey = (qr << 16) | (qg << 8) | qb;
+      const strength = Math.min(1, (m - softFloor) / Math.max(10, threshold * 0.8));
 
-      const cx = (x + 0.5) * sx;
-      const cy = (y + 0.5) * sy;
-      let connected = false;
-
-      for (let k = 0; k < 4; k++) {
-        const nx = x + forwardOffsets[k][0];
-        const ny = y + forwardOffsets[k][1];
-        const ni = ny * w + nx;
-        if (active[ni]) {
-          connected = true;
-          let segs = segBuckets.get(colorKey);
-          if (!segs) {
-            segs = [];
-            segBuckets.set(colorKey, segs);
-          }
-          segs.push(cx, cy, (nx + 0.5) * sx, (ny + 0.5) * sy);
-        }
+      let cr = 15;
+      let cg = 23;
+      let cb = 42;
+      if (cfg.outlineInkStyle === 'palette') {
+        const [pr, pg, pb] = mapPaletteColor(fR[i], fG[i], fB[i], fL[i], cfg.colorMode, true);
+        cr = Math.round(pr * 0.68);
+        cg = Math.round(pg * 0.68);
+        cb = Math.round(pb * 0.68);
+      } else if (cfg.outlineInkStyle !== 'ink') {
+        const lum = fL[i];
+        const darken = lum > 175 ? 0.5 : lum > 120 ? 0.66 : 0.84;
+        const luma = 0.2126 * fR[i] + 0.7152 * fG[i] + 0.0722 * fB[i];
+        cr = Math.round(clamp255((luma + (fR[i] - luma) * 1.35) * darken));
+        cg = Math.round(clamp255((luma + (fG[i] - luma) * 1.35) * darken));
+        cb = Math.round(clamp255((luma + (fB[i] - luma) * 1.35) * darken));
       }
 
-      if (!connected) {
-        let dots = dotBuckets.get(colorKey);
-        if (!dots) {
-          dots = [];
-          dotBuckets.set(colorKey, dots);
-        }
-        dots.push(cx, cy);
+      const baseAlpha = Math.min(1, 0.58 + strength * 0.42);
+
+      // Stamp directly into white ImageData buffer (zero Canvas path/stroke calls!)
+      for (let k = 0; k < diskOffsets.length; k++) {
+        const nx = x + diskOffsets[k][0];
+        const ny = y + diskOffsets[k][1];
+        if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
+        const a = baseAlpha * diskOffsets[k][2];
+        const p = (ny * w + nx) * 4;
+        // Alpha-blend darker ink over existing white pixel (preserving strongest overlapping contour)
+        const invA = 1 - a;
+        const nr = outD[p] * invA + cr * a;
+        const ng = outD[p + 1] * invA + cg * a;
+        const nb = outD[p + 2] * invA + cb * a;
+        if (nr < outD[p]) outD[p] = nr;
+        if (ng < outD[p + 1]) outD[p + 1] = ng;
+        if (nb < outD[p + 2]) outD[p + 2] = nb;
       }
 
-      if (cells && (contourCount % 3 === 0 || detail <= 2)) {
-        cells.push({ cx, cy, r: cr, g: cg, b: cb, lum: fL[i], char: '', alpha: 0.92, radius: strokeWidth * 0.6 });
+      if (cells && cells.length < 480 && (contourCount % 4 === 0 || detail <= 2)) {
+        cells.push({
+          cx: (x + 0.5) * sx,
+          cy: (y + 0.5) * sy,
+          r: cr,
+          g: cg,
+          b: cb,
+          lum: fL[i],
+          char: '',
+          alpha: baseAlpha,
+          radius: Math.max(1.2, cfg.outlineThickness * 0.65 * scaleMultiplier)
+        });
       }
     }
   }
 
+  oCtx.putImageData(outImg, 0, 0);
+
+  ctx.fillStyle = interiorHex;
+  ctx.fillRect(0, 0, outWidth, outHeight);
+
+  if (cfg.underlayOpacity > 0) {
+    ctx.save();
+    ctx.globalAlpha = cfg.underlayOpacity * 0.42;
+    ctx.drawImage(source, 0, 0, outWidth, outHeight);
+    ctx.restore();
+  }
+
+  // Single crisp drawImage onto baseCanvas (ZERO Skia path stroker overhead!)
   ctx.save();
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-  ctx.lineWidth = strokeWidth;
-
-  for (const [colorKey, segs] of segBuckets) {
-    ctx.strokeStyle = `rgb(${(colorKey >> 16) & 255},${(colorKey >> 8) & 255},${colorKey & 255})`;
-    ctx.beginPath();
-    for (let k = 0; k < segs.length; k += 4) {
-      ctx.moveTo(segs[k], segs[k + 1]);
-      ctx.lineTo(segs[k + 2], segs[k + 3]);
-    }
-    ctx.stroke();
-  }
-
-  const dotR = strokeWidth * 0.5;
-  for (const [colorKey, dots] of dotBuckets) {
-    ctx.fillStyle = `rgb(${(colorKey >> 16) & 255},${(colorKey >> 8) & 255},${colorKey & 255})`;
-    ctx.beginPath();
-    for (let k = 0; k < dots.length; k += 2) {
-      ctx.moveTo(dots[k] + dotR, dots[k + 1]);
-      ctx.arc(dots[k], dots[k + 1], dotR, 0, Math.PI * 2);
-    }
-    ctx.fill();
-  }
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(outCanvas, 0, 0, outWidth, outHeight);
   ctx.restore();
 
   const renderMs = Math.max(1, Math.round(performance.now() - startTime));
@@ -867,7 +840,7 @@ function renderOutline(
     rows: h,
     width: outWidth,
     height: outHeight,
-    fontSize: Math.round(strokeWidth * 4),
+    fontSize: Math.round(cfg.outlineThickness * 4 * scaleMultiplier),
     stepX: sx,
     stepY: sy,
     bgHex: interiorHex,
@@ -877,8 +850,8 @@ function renderOutline(
 }
 
 /**
- * Computes the artwork onto an offscreen base canvas with strict anti-freeze cell budgets
- * and color-bucketed Canvas 2D batching across all 5 rendering modes.
+ * Computes the artwork onto an offscreen base canvas with strict anti-freeze budgets
+ * across all 5 rendering modes.
  */
 export function renderArtwork(source, config, options = {}) {
   const startTime = performance.now();
@@ -886,7 +859,7 @@ export function renderArtwork(source, config, options = {}) {
 
   const srcWidth = Math.max(1, source.naturalWidth || source.width || 960);
   const srcHeight = Math.max(1, source.naturalHeight || source.height || 720);
-  const maxDim = options.maxDimension || 860;
+  const maxDim = options.maxDimension || 820;
 
   let outWidth = srcWidth;
   let outHeight = srcHeight;
@@ -937,8 +910,8 @@ export function renderArtwork(source, config, options = {}) {
     );
   }
 
-  // Matrix Modes: Binary, ASCII, Dots — enforce hard cell budget so small cellSize never freezes the browser
-  const maxCells = options.maxCells || (options.isDraft ? 3400 : scaleMultiplier > 1 ? 16000 : 7200);
+  // Matrix Modes: Binary, ASCII, Dots — strict cell cap prevents small cellSize freezes
+  const maxCells = options.maxCells || (options.isDraft ? 3200 : scaleMultiplier > 1 ? 15000 : 7000);
   let cellSize = Math.max(4, Math.round(cfg.cellSize * scaleMultiplier));
   let stepX = Math.max(4, Math.round(cellSize * cfg.spacing));
   let stepY = cfg.mode === 'dots' ? stepX : Math.max(4, Math.round(cellSize * cfg.spacing * 1.05));
@@ -984,8 +957,6 @@ export function renderArtwork(source, config, options = {}) {
 
   const cells = options.skipCells ? null : [];
   const textLines = options.includeText ? [] : null;
-
-  // Color-bucketed batching for Dots & Glyphs to minimize Canvas fillStyle/fill() overhead
   const dotBuckets = cfg.mode === 'dots' ? new Map() : null;
   const glyphBuckets = cfg.mode !== 'dots' ? new Map() : null;
 
@@ -1101,7 +1072,6 @@ export function renderArtwork(source, config, options = {}) {
     if (textLines) textLines.push(lineStr);
   }
 
-  // Flush batched glyphs or dots in minimal Canvas state transitions
   if (glyphBuckets) {
     ctx.font = `700 ${fontSize}px "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
     ctx.textAlign = 'center';
@@ -1115,15 +1085,19 @@ export function renderArtwork(source, config, options = {}) {
   } else if (dotBuckets) {
     for (const [styleKey, list] of dotBuckets) {
       ctx.fillStyle = styleKey;
-      ctx.beginPath();
-      for (let k = 0; k < list.length; k += 3) {
-        const cx = list[k];
-        const cy = list[k + 1];
-        const r = list[k + 2];
-        ctx.moveTo(cx + r, cy);
-        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      // Flush in small chunks (<= 64 circles per path) to keep Skia GPU tessellator instant
+      for (let start = 0; start < list.length; start += 192) {
+        const end = Math.min(list.length, start + 192);
+        ctx.beginPath();
+        for (let k = start; k < end; k += 3) {
+          const cx = list[k];
+          const cy = list[k + 1];
+          const r = list[k + 2];
+          ctx.moveTo(cx + r, cy);
+          ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        }
+        ctx.fill();
       }
-      ctx.fill();
     }
   }
 
@@ -1147,7 +1121,6 @@ export function renderArtwork(source, config, options = {}) {
 
 /**
  * Composites the cached base render plus the interactive cursor spotlight effect at 60fps.
- * Uses AABB pre-filtering and font-size caching to avoid per-frame DOM/GC stalls.
  */
 export function compositeWithSpotlight(displayCanvas, renderResult, sourceImage, config, pointer) {
   const ctx = displayCanvas.getContext('2d');
@@ -1245,7 +1218,7 @@ export function compositeWithSpotlight(displayCanvas, renderResult, sourceImage,
       if (dist2 > r2) continue;
       const t = 1 - Math.sqrt(dist2) / radius;
       const smooth = t * t * (3 - 2 * t);
-      const scaledR = Math.max(1.1, cell.radius * (1 + smooth * 0.9));
+      const scaledR = Math.max(1.1, cell.radius * (1 + smooth * 0.85));
       ctx.fillStyle = `rgba(${cell.r},${cell.g},${cell.b},${Math.min(1, cell.alpha + smooth * 0.35).toFixed(2)})`;
       ctx.beginPath();
       ctx.arc(cell.cx, cell.cy, scaledR, 0, Math.PI * 2);

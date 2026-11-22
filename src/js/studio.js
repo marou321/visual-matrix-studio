@@ -35,10 +35,12 @@ function initStudio() {
     showOriginal: false,
     pointer: { active: false, x: 0, y: 0 },
     rafId: null,
+    renderRafId: null,
     renderTimer: null,
     settleTimer: null,
+    renderVersion: 0,
     lastRenderEnd: 0,
-    lastRenderMs: 12,
+    lastRenderMs: 10,
     loadToken: 0,
     canvasRect: null
   };
@@ -49,7 +51,7 @@ function initStudio() {
   function buildWorkingSource(img) {
     const w = Math.max(1, img.naturalWidth || img.width || 960);
     const h = Math.max(1, img.naturalHeight || img.height || 720);
-    const maxWorking = 1280;
+    const maxWorking = 960;
     if (Math.max(w, h) <= maxWorking) {
       return img;
     }
@@ -302,29 +304,51 @@ function initStudio() {
   function scheduleFullRender(immediate = false) {
     if (!state.sourceImage) return;
 
+    // Coalesce & cancel all stale pending renders via monotonic version token
+    const version = ++state.renderVersion;
+    state.pointer.active = false;
+    clearTimeout(state.renderTimer);
     clearTimeout(state.settleTimer);
+    state.renderTimer = null;
+    state.settleTimer = null;
+    if (state.renderRafId) {
+      cancelAnimationFrame(state.renderRafId);
+      state.renderRafId = null;
+    }
 
     if (immediate) {
-      clearTimeout(state.renderTimer);
-      state.renderTimer = null;
-      requestAnimationFrame(() => runRender(860, false));
+      state.renderRafId = requestAnimationFrame(() => {
+        state.renderRafId = null;
+        if (version !== state.renderVersion) return;
+        runRender(780, false);
+      });
       return;
     }
 
-    // Adaptive throttle during slider drag so UI events & browser paints are NEVER starved
-    if (!state.renderTimer) {
-      const elapsed = performance.now() - state.lastRenderEnd;
-      const minGap = Math.max(45, Math.min(180, state.lastRenderMs * 1.6));
-      const delay = Math.max(0, Math.round(minGap - elapsed));
-      state.renderTimer = setTimeout(() => {
-        state.renderTimer = null;
-        requestAnimationFrame(() => runRender(540, true));
-      }, delay);
-    }
+    // Coalesced debounced draft render during rapid slider drag (never queues overlapping frames)
+    const elapsed = performance.now() - state.lastRenderEnd;
+    const minGap = Math.max(40, Math.min(160, state.lastRenderMs * 1.5));
+    const delay = Math.max(20, Math.round(minGap - elapsed));
 
-    // Sharpen to crisp full preview once slider stops moving
+    state.renderTimer = setTimeout(() => {
+      state.renderTimer = null;
+      if (version !== state.renderVersion) return;
+      state.renderRafId = requestAnimationFrame(() => {
+        state.renderRafId = null;
+        if (version !== state.renderVersion) return;
+        runRender(520, true);
+      });
+    }, delay);
+
+    // Final crisp settled render after slider stops moving
     state.settleTimer = setTimeout(() => {
-      requestAnimationFrame(() => runRender(860, false));
+      state.settleTimer = null;
+      if (version !== state.renderVersion) return;
+      state.renderRafId = requestAnimationFrame(() => {
+        state.renderRafId = null;
+        if (version !== state.renderVersion) return;
+        runRender(780, false);
+      });
     }, 180);
   }
 
