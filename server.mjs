@@ -92,7 +92,9 @@ async function loadAsset(filePath, stat, ext) {
     br: compressible ? await brotliCompress(raw) : null,
     gzip: compressible ? await gzipCompress(raw) : null
   };
-  assetCache.set(filePath, entry);
+  if (stat.size <= 2 * 1024 * 1024) {
+    assetCache.set(filePath, entry);
+  }
   return entry;
 }
 
@@ -147,7 +149,7 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(304, {
         ETag: asset.etag,
         'Cache-Control': isCodeAsset ? 'no-cache, must-revalidate' : 'public, max-age=86400',
-        'X-App-Version': '2.3.0-perf-optimized'
+        'X-App-Version': '2.4.0-anti-freeze'
       });
       res.end();
       return;
@@ -169,7 +171,7 @@ const server = http.createServer(async (req, res) => {
       'Content-Length': body.length,
       ETag: asset.etag,
       'Cache-Control': isCodeAsset ? 'no-cache, must-revalidate' : 'public, max-age=86400',
-      'X-App-Version': '2.3.0-perf-optimized'
+      'X-App-Version': '2.4.0-anti-freeze'
     };
     if (encoding) {
       headers['Content-Encoding'] = encoding;
@@ -187,6 +189,10 @@ const server = http.createServer(async (req, res) => {
     res.end('Internal Server Error');
   }
 });
+
+// Render reverse-proxy recommended keep-alive timeouts (prevents 502 socket race conditions)
+server.keepAliveTimeout = 65000;
+server.headersTimeout = 66000;
 
 server.listen(PORT, HOST, () => {
   console.log(`ChromaGlyph Studio running at http://${HOST}:${PORT}`);

@@ -22,7 +22,8 @@ const MODE_LABELS = {
 
 function initStudio() {
   const canvas = document.getElementById('studio-canvas');
-  if (!canvas) return;
+  if (!canvas || canvas.dataset.studioReady === '1') return;
+  canvas.dataset.studioReady = '1';
 
   const state = {
     config: { ...DEFAULT_CONFIG },
@@ -34,29 +35,28 @@ function initStudio() {
     showOriginal: false,
     pointer: { active: false, x: 0, y: 0 },
     rafId: null,
-    renderRafId: null,
+    renderTimer: null,
     settleTimer: null,
+    lastRenderEnd: 0,
+    lastRenderMs: 12,
+    loadToken: 0,
     canvasRect: null
   };
 
   // Persistent offscreen buffer reused across interactive preview frames (zero GC churn)
   const previewBaseCanvas = document.createElement('canvas');
 
-  /**
-   * Downscales ultra-large uploads once into a crisp 1600px working buffer for fast preview
-   * while keeping full-res sourceImage available for 1x/2x PNG export.
-   */
   function buildWorkingSource(img) {
-    const w = img.naturalWidth || img.width || 960;
-    const h = img.naturalHeight || img.height || 720;
+    const w = Math.max(1, img.naturalWidth || img.width || 960);
+    const h = Math.max(1, img.naturalHeight || img.height || 720);
     const maxWorking = 1280;
     if (Math.max(w, h) <= maxWorking) {
       return img;
     }
     const scale = maxWorking / Math.max(w, h);
     const c = document.createElement('canvas');
-    c.width = Math.round(w * scale);
-    c.height = Math.round(h * scale);
+    c.width = Math.max(1, Math.round(w * scale));
+    c.height = Math.max(1, Math.round(h * scale));
     const cctx = c.getContext('2d');
     cctx.imageSmoothingEnabled = true;
     cctx.imageSmoothingQuality = 'high';
@@ -64,8 +64,8 @@ function initStudio() {
     return c;
   }
 
-  function refreshCanvasRect() {
-    state.canvasRect = canvas.getBoundingClientRect();
+  function invalidateCanvasRect() {
+    state.canvasRect = null;
   }
 
   // DOM References
@@ -265,29 +265,38 @@ function initStudio() {
     );
   }
 
-  function runRender(maxDimension) {
+  function runRender(maxDimension, isDraft = false) {
     const src = state.workingSource || state.sourceImage;
     if (!src) return;
-    state.renderResult = renderArtwork(src, state.config, {
-      maxDimension,
-      targetCanvas: previewBaseCanvas
-    });
-    paintFrame();
-    refreshCanvasRect();
+    try {
+      state.renderResult = renderArtwork(src, state.config, {
+        maxDimension,
+        maxCells: isDraft ? 3200 : 7200,
+        isDraft,
+        targetCanvas: previewBaseCanvas
+      });
+      paintFrame();
+      invalidateCanvasRect();
 
-    const r = state.renderResult;
-    if (statDims) statDims.textContent = `${r.width}×${r.height}px`;
-    if (statGrid) {
-      if (state.config.mode === 'aquarelle') {
-        statGrid.textContent = `${r.cols}×${r.rows} wash grid`;
-      } else if (state.config.mode === 'outline') {
-        statGrid.textContent = `${r.cols}×${r.rows} contour map`;
-      } else {
-        statGrid.textContent = `${r.cols}×${r.rows} (${(r.cols * r.rows).toLocaleString()} cells)`;
+      const r = state.renderResult;
+      state.lastRenderMs = r.renderMs || 12;
+      state.lastRenderEnd = performance.now();
+
+      if (statDims) statDims.textContent = `${r.width}×${r.height}px`;
+      if (statGrid) {
+        if (state.config.mode === 'aquarelle') {
+          statGrid.textContent = `${r.cols}×${r.rows} wash grid`;
+        } else if (state.config.mode === 'outline') {
+          statGrid.textContent = `${r.cols}×${r.rows} contour map`;
+        } else {
+          statGrid.textContent = `${r.cols}×${r.rows} (${(r.cols * r.rows).toLocaleString()} cells)`;
+        }
       }
+      if (statMode) statMode.textContent = MODE_LABELS[state.config.mode] || state.config.mode;
+      if (statTime) statTime.textContent = `${r.renderMs}ms`;
+    } catch (err) {
+      console.error('ChromaGlyph render error:', err);
     }
-    if (statMode) statMode.textContent = MODE_LABELS[state.config.mode] || state.config.mode;
-    if (statTime) statTime.textContent = `${r.renderMs}ms`;
   }
 
   function scheduleFullRender(immediate = false) {
@@ -296,25 +305,27 @@ function initStudio() {
     clearTimeout(state.settleTimer);
 
     if (immediate) {
-      if (state.renderRafId) {
-        cancelAnimationFrame(state.renderRafId);
-        state.renderRafId = null;
-      }
-      runRender(920);
+      clearTimeout(state.renderTimer);
+      state.renderTimer = null;
+      requestAnimationFrame(() => runRender(860, false));
       return;
     }
 
-    // Smooth rAF-gated interactive drag preview (680px), then sharpen to 920px once slider settles
-    if (!state.renderRafId) {
-      state.renderRafId = requestAnimationFrame(() => {
-        state.renderRafId = null;
-        runRender(680);
-      });
+    // Adaptive throttle during slider drag so UI events & browser paints are NEVER starved
+    if (!state.renderTimer) {
+      const elapsed = performance.now() - state.lastRenderEnd;
+      const minGap = Math.max(45, Math.min(180, state.lastRenderMs * 1.6));
+      const delay = Math.max(0, Math.round(minGap - elapsed));
+      state.renderTimer = setTimeout(() => {
+        state.renderTimer = null;
+        requestAnimationFrame(() => runRender(540, true));
+      }, delay);
     }
 
+    // Sharpen to crisp full preview once slider stops moving
     state.settleTimer = setTimeout(() => {
-      runRender(920);
-    }, 140);
+      requestAnimationFrame(() => runRender(860, false));
+    }, 180);
   }
 
   function scheduleSpotlightPaint() {
@@ -326,12 +337,15 @@ function initStudio() {
   }
 
   async function selectSample(sampleId) {
+    const token = ++state.loadToken;
     const sample = getSampleById(sampleId);
     state.activeSampleId = sample.id;
     state.sourceLabel = sample.name;
     updateSampleActiveState();
-    state.sourceImage = await loadSampleImage(sample.id);
-    state.workingSource = buildWorkingSource(state.sourceImage);
+    const img = await loadSampleImage(sample.id);
+    if (token !== state.loadToken) return;
+    state.sourceImage = img;
+    state.workingSource = buildWorkingSource(img);
     scheduleFullRender(true);
   }
 
@@ -340,21 +354,25 @@ function initStudio() {
       showToast('Please select a valid image file (PNG, JPG, WebP, or GIF).');
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const img = new Image();
-      img.onload = () => {
-        state.sourceImage = img;
-        state.workingSource = buildWorkingSource(img);
-        state.activeSampleId = '';
-        state.sourceLabel = file.name.replace(/\.[^.]+$/, '');
-        updateSampleActiveState();
-        scheduleFullRender(true);
-        showToast(`Loaded "${file.name}" locally in browser.`);
-      };
-      img.src = reader.result;
+    const token = ++state.loadToken;
+    const objectUrl = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      if (token !== state.loadToken) return;
+      state.sourceImage = img;
+      state.workingSource = buildWorkingSource(img);
+      state.activeSampleId = '';
+      state.sourceLabel = file.name.replace(/\.[^.]+$/, '');
+      updateSampleActiveState();
+      scheduleFullRender(true);
+      showToast(`Loaded "${file.name}" locally in browser.`);
     };
-    reader.readAsDataURL(file);
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      showToast('Could not decode that image file. Try PNG, JPG, or WebP.');
+    };
+    img.src = objectUrl;
   }
 
   // Event Listeners: Mode Tabs with smart backdrop adaptation & Compare-Original auto-exit
@@ -571,12 +589,16 @@ function initStudio() {
     });
   }
 
-  // Interactive Mouse / Touch Spotlight Tracking (cached rect — zero layout thrashing on pointermove)
-  window.addEventListener('resize', refreshCanvasRect, { passive: true });
-  window.addEventListener('scroll', refreshCanvasRect, { passive: true });
+  // Interactive Mouse / Touch Spotlight Tracking (zero forced layout on scroll/resize)
+  window.addEventListener('resize', invalidateCanvasRect, { passive: true });
+  window.addEventListener('scroll', invalidateCanvasRect, { passive: true });
 
-  canvas.addEventListener('pointerenter', refreshCanvasRect, { passive: true });
+  canvas.addEventListener('pointerenter', () => {
+    state.canvasRect = canvas.getBoundingClientRect();
+  }, { passive: true });
+
   canvas.addEventListener('pointermove', (e) => {
+    if (!state.renderResult || state.config.spotlightMode === 'off') return;
     const rect = state.canvasRect || canvas.getBoundingClientRect();
     state.canvasRect = rect;
     if (!rect.width || !rect.height) return;
@@ -587,6 +609,7 @@ function initStudio() {
   }, { passive: true });
 
   canvas.addEventListener('pointerleave', () => {
+    if (!state.pointer.active) return;
     state.pointer.active = false;
     scheduleSpotlightPaint();
   }, { passive: true });
@@ -664,28 +687,69 @@ function initStudio() {
     });
   }
 
-  // Download High-Res PNG Export
+  // Download High-Res PNG Export (async toBlob encoding — never freezes main thread)
   if (downloadBtn) {
+    let exporting = false;
     downloadBtn.addEventListener('click', () => {
-      if (!state.sourceImage) return;
-      const scale = exportScaleSelect ? Number(exportScaleSelect.value) || 1 : 1;
-      const exportResult = renderArtwork(state.sourceImage, state.config, {
-        maxDimension: 1200,
-        exportScale: scale,
-        skipCells: true
-      });
+      if (!state.sourceImage || exporting) return;
+      exporting = true;
+      const originalHtml = downloadBtn.innerHTML;
+      downloadBtn.disabled = true;
+      downloadBtn.textContent = 'Exporting PNG...';
 
-      const slug = state.sourceLabel
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/(^-|-$)/g, '') || 'artwork';
-      const filename = `chromaglyph-${state.config.mode}-${slug}-${scale}x.png`;
+      setTimeout(() => {
+        try {
+          const scale = exportScaleSelect ? Number(exportScaleSelect.value) || 1 : 1;
+          const exportResult = renderArtwork(state.sourceImage, state.config, {
+            maxDimension: 1100,
+            maxCells: scale > 1 ? 15000 : 9000,
+            exportScale: scale,
+            skipCells: true
+          });
 
-      const link = document.createElement('a');
-      link.download = filename;
-      link.href = exportResult.baseCanvas.toDataURL('image/png');
-      link.click();
-      showToast(`Exported ${exportResult.width}×${exportResult.height} PNG!`);
+          const slug = state.sourceLabel
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/(^-|-$)/g, '') || 'artwork';
+          const filename = `chromaglyph-${state.config.mode}-${slug}-${scale}x.png`;
+
+          const finalize = () => {
+            exportResult.baseCanvas.width = 0;
+            exportResult.baseCanvas.height = 0;
+            downloadBtn.disabled = false;
+            downloadBtn.innerHTML = originalHtml;
+            exporting = false;
+          };
+
+          if (typeof exportResult.baseCanvas.toBlob === 'function') {
+            exportResult.baseCanvas.toBlob((blob) => {
+              if (blob) {
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.download = filename;
+                link.href = url;
+                link.click();
+                setTimeout(() => URL.revokeObjectURL(url), 1500);
+                showToast(`Exported ${exportResult.width}×${exportResult.height} PNG!`);
+              }
+              finalize();
+            }, 'image/png');
+          } else {
+            const link = document.createElement('a');
+            link.download = filename;
+            link.href = exportResult.baseCanvas.toDataURL('image/png');
+            link.click();
+            showToast(`Exported ${exportResult.width}×${exportResult.height} PNG!`);
+            finalize();
+          }
+        } catch (err) {
+          console.error('PNG export failed:', err);
+          showToast('PNG export failed — try 1× HD scale.');
+          downloadBtn.disabled = false;
+          downloadBtn.innerHTML = originalHtml;
+          exporting = false;
+        }
+      }, 16);
     });
   }
 

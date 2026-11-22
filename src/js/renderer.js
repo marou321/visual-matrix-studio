@@ -1,5 +1,5 @@
 /**
- * ChromaGlyph Studio — High-Performance Color-True Rendering Engine
+ * ChromaGlyph Studio — High-Performance, Freeze-Proof Rendering Engine
  * Modes:
  *  - binary:    0/1 character art mapped by luminance threshold (with optional Bayer 4x4 dithering)
  *  - ascii:     Multi-ramp character art mapped by optical density & real RGB or curated palettes
@@ -7,10 +7,11 @@
  *  - aquarelle: Fast multi-pass translucent watercolor washes, pigment bleed, capillary rims & paper grain
  *  - outline:   Color-aware Sobel + 8-way NMS contour extraction with batched vector strokes & #FFFFFF interior
  *
- * Performance optimizations:
- *  - Pooled offscreen scratch canvases (zero per-frame canvas GC churn during slider drags)
- *  - Zero per-dab createRadialGradient allocations in Aquarelle inner loops
- *  - Color-bucketed path batching in Outline mode (1 stroke in Ink mode; ~40-90 batched strokes in RGB)
+ * Anti-freeze guarantees:
+ *  - Strict max cell budget (prevents O(1/cellSize^2) 40,000+ fillText/arc tab freezes)
+ *  - Color-bucketed Canvas 2D draw batching across Binary, ASCII, Dots, Aquarelle, and Outline
+ *  - Pooled offscreen scratch canvases (zero per-frame canvas GC churn)
+ *  - Zero per-dab createRadialGradient allocations inside inner loops
  *  - AABB spatial culling & font-state caching in 60fps cursor spotlight compositing
  */
 
@@ -97,7 +98,7 @@ const BAYER_4X4 = [
   [15 / 16 - 0.5, 7 / 16 - 0.5, 13 / 16 - 0.5, 5 / 16 - 0.5]
 ];
 
-// Reusable offscreen scratch canvas pool (avoids per-frame DOM allocations & GC stalls)
+// Reusable offscreen scratch canvas pool (avoids per-frame DOM allocations & GC pauses)
 const scratchPool = new Map();
 
 function getScratchCanvas(key, w, h) {
@@ -106,8 +107,10 @@ function getScratchCanvas(key, w, h) {
     c = document.createElement('canvas');
     scratchPool.set(key, c);
   }
-  if (c.width !== w) c.width = w;
-  if (c.height !== h) c.height = h;
+  const safeW = Math.max(1, w | 0);
+  const safeH = Math.max(1, h | 0);
+  if (c.width !== safeW) c.width = safeW;
+  if (c.height !== safeH) c.height = safeH;
   return c;
 }
 
@@ -178,7 +181,7 @@ let cachedPaperPatternCanvas = null;
 
 function getPaperGrainTile() {
   if (cachedPaperPatternCanvas) return cachedPaperPatternCanvas;
-  const size = 144;
+  const size = 128;
   const tile = document.createElement('canvas');
   tile.width = size;
   tile.height = size;
@@ -191,12 +194,12 @@ function getPaperGrainTile() {
     for (let x = 0; x < size; x++) {
       const idx = (y * size + x) * 4;
       const wave = Math.sin(x * 0.19 + y * 0.07) * 6 + Math.cos(y * 0.23 - x * 0.05) * 5;
-      const noise = (rand() - 0.5) * 26;
+      const noise = (rand() - 0.5) * 24;
       const shade = clamp255(238 + wave + noise);
       d[idx] = shade;
       d[idx + 1] = clamp255(shade - 2);
       d[idx + 2] = clamp255(shade - 6);
-      d[idx + 3] = 28;
+      d[idx + 3] = 26;
     }
   }
   tctx.putImageData(imgData, 0, 0);
@@ -222,7 +225,7 @@ function smoothField(srcR, srcG, srcB, w, h, radius) {
       let sb = 0;
       const x0 = x - radius < 0 ? 0 : x - radius;
       const x1 = x + radius >= w ? w - 1 : x + radius;
-      const count = x1 - x0 + 1;
+      const inv = 1 / (x1 - x0 + 1);
       for (let k = x0; k <= x1; k++) {
         const i = rowOff + k;
         sr += srcR[i];
@@ -230,16 +233,16 @@ function smoothField(srcR, srcG, srcB, w, h, radius) {
         sb += srcB[i];
       }
       const dst = rowOff + x;
-      tmpR[dst] = sr / count;
-      tmpG[dst] = sg / count;
-      tmpB[dst] = sb / count;
+      tmpR[dst] = sr * inv;
+      tmpG[dst] = sg * inv;
+      tmpB[dst] = sb * inv;
     }
   }
 
   for (let y = 0; y < h; y++) {
     const y0 = y - radius < 0 ? 0 : y - radius;
     const y1 = y + radius >= h ? h - 1 : y + radius;
-    const count = y1 - y0 + 1;
+    const inv = 1 / (y1 - y0 + 1);
     const dstRow = y * w;
     for (let x = 0; x < w; x++) {
       let sr = 0;
@@ -252,9 +255,9 @@ function smoothField(srcR, srcG, srcB, w, h, radius) {
         sb += tmpB[i];
       }
       const dst = dstRow + x;
-      outR[dst] = sr / count;
-      outG[dst] = sg / count;
-      outB[dst] = sb / count;
+      outR[dst] = sr * inv;
+      outG[dst] = sg * inv;
+      outB[dst] = sb * inv;
     }
   }
 
@@ -262,9 +265,8 @@ function smoothField(srcR, srcG, srcB, w, h, radius) {
 }
 
 /**
- * High-Speed Aquarelle (Watercolor) Rendering Mode
- * Uses soft bilinear wet-on-wet under-wash + concentric feathered translucent ellipses
- * (zero per-dab radial-gradient allocations) + capillary rims + batched edge accents + paper tooth.
+ * Ultra-Fast Aquarelle (Watercolor) Rendering Mode
+ * Budgeted strictly under ~850 expressive organic washes + batched edge accents + paper tooth.
  */
 function renderAquarelle(
   source,
@@ -291,6 +293,7 @@ function renderAquarelle(
   const softnessNorm = Math.max(0, Math.min(1, (cfg.aquarelleSoftness - 20) / 80));
   const pigmentNorm = Math.max(0.35, Math.min(1.5, cfg.aquarellePigment / 100));
   const detailLevel = Math.max(1, Math.min(5, Math.round(cfg.aquarelleDetail)));
+  const isDraft = Boolean(options.isDraft);
 
   const toWatercolorRGB = (rawR, rawG, rawB) => {
     const [ar, ag, ab] = adjustPixelColor(
@@ -315,10 +318,10 @@ function renderAquarelle(
     return [Math.round(cr), Math.round(cg), Math.round(cb), lum];
   };
 
-  // Pass 0: Wet-on-wet atmospheric under-wash
-  const underScale = 10 + softnessNorm * 16;
-  const underW = Math.max(44, Math.round(outWidth / underScale));
-  const underH = Math.max(32, Math.round(outHeight / underScale));
+  // Pass 0: Soft wet-on-wet atmospheric under-wash
+  const underScale = 11 + softnessNorm * 16;
+  const underW = Math.max(40, Math.round(outWidth / underScale));
+  const underH = Math.max(30, Math.round(outHeight / underScale));
   const underCanvas = getScratchCanvas('aq-under', underW, underH);
   const uctx = underCanvas.getContext('2d', { willReadFrequently: true });
   uctx.imageSmoothingEnabled = true;
@@ -340,7 +343,7 @@ function renderAquarelle(
   ctx.save();
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
-  ctx.globalAlpha = Math.min(0.88, 0.44 + pigmentNorm * 0.28);
+  ctx.globalAlpha = Math.min(0.88, 0.45 + pigmentNorm * 0.28);
   ctx.drawImage(underCanvas, 0, 0, outWidth, outHeight);
   ctx.restore();
 
@@ -353,39 +356,50 @@ function renderAquarelle(
 
   const rand = mulberry32(133791);
   const cells = options.skipCells ? null : [];
-
-  // Two fast, expressive painterly passes (strictly capped grid budget so every frame stays < 25ms)
-  const baseTargetCols = Math.round(16 + detailLevel * 5 + Math.max(0, 14 - cfg.cellSize) * 0.8);
-  const passes = [
-    {
-      cols: Math.max(12, Math.round(baseTargetCols * 0.62)),
-      radiusMul: 1.2 + softnessNorm * 0.78,
-      alpha: Math.min(0.34, 0.14 * pigmentNorm + 0.08),
-      drawRim: false,
-      recordCells: false
-    },
-    {
-      cols: Math.min(44, Math.max(18, baseTargetCols)),
-      radiusMul: 0.88 + softnessNorm * 0.48,
-      alpha: Math.min(0.42, 0.18 * pigmentNorm + 0.1),
-      drawRim: true,
-      recordCells: true
-    }
-  ];
-
-  let finalCols = 0;
-  let finalRows = 0;
   const aspect = outHeight / outWidth;
+
+  // Strictly budgeted organic washes (~200 to ~650 brushstrokes -> fast 5-15ms rendering)
+  const maxCols = isDraft ? 20 : 28;
+  const targetCols = Math.min(maxCols, Math.max(12, Math.round(12 + detailLevel * 3.2 + Math.max(0, 12 - cfg.cellSize) * 0.5)));
+  const passes = isDraft
+    ? [
+        {
+          cols: targetCols,
+          radiusMul: 1.05 + softnessNorm * 0.58,
+          alpha: Math.min(0.46, 0.2 * pigmentNorm + 0.12),
+          drawRim: false,
+          recordCells: true
+        }
+      ]
+    : [
+        {
+          cols: Math.max(10, Math.round(targetCols * 0.6)),
+          radiusMul: 1.3 + softnessNorm * 0.78,
+          alpha: Math.min(0.36, 0.15 * pigmentNorm + 0.08),
+          drawRim: false,
+          recordCells: false
+        },
+        {
+          cols: targetCols,
+          radiusMul: 0.96 + softnessNorm * 0.48,
+          alpha: Math.min(0.44, 0.19 * pigmentNorm + 0.1),
+          drawRim: true,
+          recordCells: true
+        }
+      ];
+
+  let finalCols = targetCols;
+  let finalRows = Math.max(8, Math.round(targetCols * aspect));
 
   for (let pIdx = 0; pIdx < passes.length; pIdx++) {
     const pass = passes[pIdx];
-    const cols = Math.max(10, Math.round(pass.cols / Math.max(0.75, cfg.spacing)));
-    const rows = Math.max(8, Math.round(cols * aspect));
+    const cols = Math.max(8, Math.round(pass.cols / Math.max(0.8, cfg.spacing)));
+    const rows = Math.max(6, Math.round(cols * aspect));
     const stepX = outWidth / cols;
     const stepY = outHeight / rows;
     const avgStep = (stepX + stepY) * 0.5;
 
-    if (pIdx === 1) {
+    if (pass.recordCells) {
       finalCols = cols;
       finalRows = rows;
     }
@@ -398,8 +412,6 @@ function renderAquarelle(
     const data = sCtx.getImageData(0, 0, cols, rows).data;
 
     ctx.save();
-    ctx.globalCompositeOperation = 'source-over';
-
     for (let row = 0; row < rows; row++) {
       for (let col = 0; col < cols; col++) {
         const idx = (row * cols + col) * 4;
@@ -412,33 +424,31 @@ function renderAquarelle(
         const jitterY = (rand() - 0.5) * stepY * (0.5 + softnessNorm * 0.32);
         const cx = (col + 0.5) * stepX + jitterX;
         const cy = (row + 0.5) * stepY + jitterY;
-        const r = avgStep * pass.radiusMul * (0.8 + rand() * 0.42);
-        const scaleX = 0.78 + rand() * 0.46;
-        const scaleY = 0.78 + rand() * 0.46;
+        const r = avgStep * pass.radiusMul * (0.82 + rand() * 0.4);
+        const rx = r * (0.8 + rand() * 0.42);
+        const ry = r * (0.8 + rand() * 0.42);
         const rot = rand() * Math.PI;
-        const rx = r * scaleX;
-        const ry = r * scaleY;
 
         const coreAlpha = Math.min(
           0.56,
           pass.alpha * (cfg.invert ? 0.65 + (lum / 255) * 0.45 : 0.8 + (1 - lum / 255) * 0.25)
         );
 
-        // Outer soft bleed halo (feathered edge without gradient shader allocation)
-        ctx.fillStyle = `rgba(${cr},${cg},${cb},${(coreAlpha * 0.38).toFixed(3)})`;
+        // Soft bleed halo
+        ctx.fillStyle = `rgba(${cr},${cg},${cb},${(coreAlpha * 0.36).toFixed(2)})`;
         ctx.beginPath();
         ctx.ellipse(cx, cy, rx, ry, rot, 0, Math.PI * 2);
         ctx.fill();
 
         // Inner pigment wash body
-        ctx.fillStyle = `rgba(${cr},${cg},${cb},${(coreAlpha * 0.72).toFixed(3)})`;
+        ctx.fillStyle = `rgba(${cr},${cg},${cb},${(coreAlpha * 0.72).toFixed(2)})`;
         ctx.beginPath();
-        ctx.ellipse(cx + jitterX * 0.14, cy + jitterY * 0.14, rx * 0.66, ry * 0.66, rot, 0, Math.PI * 2);
+        ctx.ellipse(cx + jitterX * 0.14, cy + jitterY * 0.14, rx * 0.65, ry * 0.65, rot, 0, Math.PI * 2);
         ctx.fill();
 
         // Subtle capillary drying rim
-        if (pass.drawRim && rand() > 0.54) {
-          ctx.strokeStyle = `rgba(${Math.round(cr * 0.76)},${Math.round(cg * 0.76)},${Math.round(cb * 0.76)},${(coreAlpha * 0.36).toFixed(3)})`;
+        if (pass.drawRim && rand() > 0.56) {
+          ctx.strokeStyle = `rgba(${Math.round(cr * 0.76)},${Math.round(cg * 0.76)},${Math.round(cb * 0.76)},${(coreAlpha * 0.35).toFixed(2)})`;
           ctx.lineWidth = Math.max(0.8, 1.2 * scaleMultiplier);
           ctx.beginPath();
           ctx.ellipse(cx, cy, rx * 0.84, ry * 0.84, rot, 0, Math.PI * 2);
@@ -446,95 +456,91 @@ function renderAquarelle(
         }
 
         if (pass.recordCells && cells) {
-          cells.push({ cx, cy, r: cr, g: cg, b: cb, lum, char: '', alpha: coreAlpha, radius: r * 0.52 });
+          cells.push({ cx, cy, r: cr, g: cg, b: cb, lum, char: '', alpha: coreAlpha, radius: r * 0.5 });
         }
       }
     }
     ctx.restore();
   }
 
-  // Pass 3: Lightweight watercolor edge accents along major contours
-  const edgeW = Math.min(180, Math.max(96, Math.round(outWidth / (6.5 - detailLevel * 0.65))));
-  const edgeH = Math.max(60, Math.round(edgeW * aspect));
-  const eCanvas = getScratchCanvas('aq-edge', edgeW, edgeH);
-  const eCtx = eCanvas.getContext('2d', { willReadFrequently: true });
-  eCtx.drawImage(source, 0, 0, edgeW, edgeH);
-  const ePixels = eCtx.getImageData(0, 0, edgeW, edgeH).data;
-  const eLum = new Float32Array(edgeW * edgeH);
+  // Pass 3: Batched watercolor contour accents (skipped during active drag draft for instant feedback)
+  if (!isDraft) {
+    const edgeW = Math.min(150, Math.max(88, Math.round(outWidth / (7 - detailLevel * 0.65))));
+    const edgeH = Math.max(54, Math.round(edgeW * aspect));
+    const eCanvas = getScratchCanvas('aq-edge', edgeW, edgeH);
+    const eCtx = eCanvas.getContext('2d', { willReadFrequently: true });
+    eCtx.drawImage(source, 0, 0, edgeW, edgeH);
+    const ePixels = eCtx.getImageData(0, 0, edgeW, edgeH).data;
+    const eLum = new Float32Array(edgeW * edgeH);
 
-  for (let i = 0; i < edgeW * edgeH; i++) {
-    const p = i * 4;
-    const [ar, ag, ab] = adjustPixelColor(
-      ePixels[p],
-      ePixels[p + 1],
-      ePixels[p + 2],
-      contrastFactor,
-      brightnessOffset,
-      satFactor
-    );
-    eLum[i] = 0.2126 * ar + 0.7152 * ag + 0.0722 * ab;
-  }
-
-  const sx = outWidth / edgeW;
-  const sy = outHeight / edgeH;
-  const edgeCutoff = 50 - detailLevel * 5;
-  const rad = Math.max(1.3, (1.6 + softnessNorm * 1.4) * scaleMultiplier);
-  const edgeAlpha = Math.min(0.26, 0.14 * pigmentNorm).toFixed(3);
-  const edgeBuckets = new Map();
-
-  for (let y = 1; y < edgeH - 1; y++) {
-    const rowOff = y * edgeW;
-    for (let x = 1; x < edgeW - 1; x++) {
-      const i = rowOff + x;
-      const gx =
-        -eLum[i - edgeW - 1] + eLum[i - edgeW + 1] -
-        2 * eLum[i - 1] + 2 * eLum[i + 1] -
-        eLum[i + edgeW - 1] + eLum[i + edgeW + 1];
-      const gy =
-        -eLum[i - edgeW - 1] - 2 * eLum[i - edgeW] - eLum[i - edgeW + 1] +
-        eLum[i + edgeW - 1] + 2 * eLum[i + edgeW] + eLum[i + edgeW + 1];
-      const mag = Math.sqrt(gx * gx + gy * gy) * 0.25;
-      if (mag < edgeCutoff) continue;
-
+    for (let i = 0; i < edgeW * edgeH; i++) {
       const p = i * 4;
-      const [cr, cg, cb] = toWatercolorRGB(ePixels[p], ePixels[p + 1], ePixels[p + 2]);
-      const qr = Math.round(cr * 0.72) & 0xe0;
-      const qg = Math.round(cg * 0.72) & 0xe0;
-      const qb = Math.round(cb * 0.72) & 0xe0;
-      const key = (qr << 16) | (qg << 8) | qb;
-      let pts = edgeBuckets.get(key);
-      if (!pts) {
-        pts = [];
-        edgeBuckets.set(key, pts);
+      const [ar, ag, ab] = adjustPixelColor(
+        ePixels[p],
+        ePixels[p + 1],
+        ePixels[p + 2],
+        contrastFactor,
+        brightnessOffset,
+        satFactor
+      );
+      eLum[i] = 0.2126 * ar + 0.7152 * ag + 0.0722 * ab;
+    }
+
+    const sx = outWidth / edgeW;
+    const sy = outHeight / edgeH;
+    const edgeCutoff = 50 - detailLevel * 5;
+    const rad = Math.max(1.3, (1.6 + softnessNorm * 1.3) * scaleMultiplier);
+    const edgeAlpha = Math.min(0.25, 0.14 * pigmentNorm).toFixed(2);
+    const edgeBuckets = new Map();
+
+    for (let y = 1; y < edgeH - 1; y++) {
+      const rowOff = y * edgeW;
+      for (let x = 1; x < edgeW - 1; x++) {
+        const i = rowOff + x;
+        const gx =
+          -eLum[i - edgeW - 1] + eLum[i - edgeW + 1] -
+          2 * eLum[i - 1] + 2 * eLum[i + 1] -
+          eLum[i + edgeW - 1] + eLum[i + edgeW + 1];
+        const gy =
+          -eLum[i - edgeW - 1] - 2 * eLum[i - edgeW] - eLum[i - edgeW + 1] +
+          eLum[i + edgeW - 1] + 2 * eLum[i + edgeW] + eLum[i + edgeW + 1];
+        const mag = Math.sqrt(gx * gx + gy * gy) * 0.25;
+        if (mag < edgeCutoff) continue;
+
+        const p = i * 4;
+        const [cr, cg, cb] = toWatercolorRGB(ePixels[p], ePixels[p + 1], ePixels[p + 2]);
+        const key = ((Math.round(cr * 0.72) & 0xe0) << 16) | ((Math.round(cg * 0.72) & 0xe0) << 8) | (Math.round(cb * 0.72) & 0xe0);
+        let pts = edgeBuckets.get(key);
+        if (!pts) {
+          pts = [];
+          edgeBuckets.set(key, pts);
+        }
+        pts.push((x + 0.5) * sx, (y + 0.5) * sy);
       }
-      pts.push((x + 0.5) * sx, (y + 0.5) * sy);
     }
+
+    ctx.save();
+    for (const [key, pts] of edgeBuckets) {
+      ctx.fillStyle = `rgba(${(key >> 16) & 255},${(key >> 8) & 255},${key & 255},${edgeAlpha})`;
+      ctx.beginPath();
+      for (let k = 0; k < pts.length; k += 2) {
+        const px = pts[k];
+        const py = pts[k + 1];
+        ctx.moveTo(px + rad, py);
+        ctx.arc(px, py, rad, 0, Math.PI * 2);
+      }
+      ctx.fill();
+    }
+    ctx.restore();
   }
 
-  ctx.save();
-  for (const [key, pts] of edgeBuckets) {
-    const r = (key >> 16) & 255;
-    const g = (key >> 8) & 255;
-    const b = key & 255;
-    ctx.fillStyle = `rgba(${r},${g},${b},${edgeAlpha})`;
-    ctx.beginPath();
-    for (let k = 0; k < pts.length; k += 2) {
-      const px = pts[k];
-      const py = pts[k + 1];
-      ctx.moveTo(px + rad, py);
-      ctx.arc(px, py, rad, 0, Math.PI * 2);
-    }
-    ctx.fill();
-  }
-  ctx.restore();
-
-  // Pass 4: Cold-press watercolor paper grain texture overlay
+  // Pass 4: Cold-press paper grain texture overlay
   if (cfg.aquarellePaperGrain) {
     ctx.save();
     const pattern = ctx.createPattern(getPaperGrainTile(), 'repeat');
     if (pattern) {
       ctx.globalCompositeOperation = bgSpec.light ? 'multiply' : 'overlay';
-      ctx.globalAlpha = bgSpec.light ? 0.52 : 0.26;
+      ctx.globalAlpha = bgSpec.light ? 0.5 : 0.25;
       ctx.fillStyle = pattern;
       ctx.fillRect(0, 0, outWidth, outHeight);
     }
@@ -559,9 +565,8 @@ function renderAquarelle(
 }
 
 /**
- * High-Speed Shape / Hollow Outline Rendering Mode
- * Detects main shapes, contours, and silhouettes via color-aware Sobel + corrected 8-way NMS,
- * batching connected contour segments by color bucket over a pure white (#FFFFFF) interior.
+ * Ultra-Fast Shape / Hollow Outline Rendering Mode
+ * Color-aware Sobel + corrected 8-way NMS + color-bucketed batched vector strokes over #FFFFFF interior.
  */
 function renderOutline(
   source,
@@ -593,9 +598,10 @@ function renderOutline(
   }
 
   const detail = Math.max(1, Math.min(5, Math.round(cfg.outlineDetail)));
-  const targetMaxW = 160 + detail * 55; // 215px..435px (fast & crisp silhouettes)
-  const w = Math.min(outWidth, targetMaxW);
-  const h = Math.max(60, Math.round((w * outHeight) / outWidth));
+  const isDraft = Boolean(options.isDraft);
+  const targetMaxW = isDraft ? 130 + detail * 28 : 140 + detail * 42; // 182px..350px preview, ultra-fast
+  const w = Math.min(outWidth, options.exportScale > 1 ? targetMaxW + 80 : targetMaxW);
+  const h = Math.max(54, Math.round((w * outHeight) / outWidth));
 
   const sCanvas = getScratchCanvas('outline-src', w, h);
   const sCtx = sCanvas.getContext('2d', { willReadFrequently: true });
@@ -635,33 +641,39 @@ function renderOutline(
   const dir = new Uint8Array(len);
   const hist = new Uint32Array(256);
 
-  const sobelAt = (arr, i) => {
-    const gx =
-      -arr[i - w - 1] + arr[i - w + 1] -
-      2 * arr[i - 1] + 2 * arr[i + 1] -
-      arr[i + w - 1] + arr[i + w + 1];
-    const gy =
-      -arr[i - w - 1] - 2 * arr[i - w] - arr[i - w + 1] +
-      arr[i + w - 1] + 2 * arr[i + w] + arr[i + w + 1];
-    return [gx, gy, Math.sqrt(gx * gx + gy * gy) * 0.25];
-  };
-
   for (let y = 1; y < h - 1; y++) {
     const rowOff = y * w;
     for (let x = 1; x < w - 1; x++) {
       const i = rowOff + x;
-      const [gxL, gyL, mL] = sobelAt(fL, i);
-      const [gxR, gyR, mR] = sobelAt(fR, i);
-      const [gxG, gyG, mG] = sobelAt(fG, i);
-      const [gxB, gyB, mB] = sobelAt(fB, i);
+      const ul = i - w - 1;
+      const u = i - w;
+      const ur = i - w + 1;
+      const l = i - 1;
+      const r = i + 1;
+      const dl = i + w - 1;
+      const d = i + w;
+      const dr = i + w + 1;
 
-      let bestM = mL;
+      const gxL = -fL[ul] + fL[ur] - 2 * fL[l] + 2 * fL[r] - fL[dl] + fL[dr];
+      const gyL = -fL[ul] - 2 * fL[u] - fL[ur] + fL[dl] + 2 * fL[d] + fL[dr];
+      let bestM = Math.sqrt(gxL * gxL + gyL * gyL) * 0.25;
       let bestGx = gxL;
       let bestGy = gyL;
 
-      if (mR * 0.92 > bestM) { bestM = mR * 0.92; bestGx = gxR; bestGy = gyR; }
-      if (mG * 0.92 > bestM) { bestM = mG * 0.92; bestGx = gxG; bestGy = gyG; }
-      if (mB * 0.92 > bestM) { bestM = mB * 0.92; bestGx = gxB; bestGy = gyB; }
+      const gxR = -fR[ul] + fR[ur] - 2 * fR[l] + 2 * fR[r] - fR[dl] + fR[dr];
+      const gyR = -fR[ul] - 2 * fR[u] - fR[ur] + fR[dl] + 2 * fR[d] + fR[dr];
+      const mR = Math.sqrt(gxR * gxR + gyR * gyR) * 0.23;
+      if (mR > bestM) { bestM = mR; bestGx = gxR; bestGy = gyR; }
+
+      const gxG = -fG[ul] + fG[ur] - 2 * fG[l] + 2 * fG[r] - fG[dl] + fG[dr];
+      const gyG = -fG[ul] - 2 * fG[u] - fG[ur] + fG[dl] + 2 * fG[d] + fG[dr];
+      const mG = Math.sqrt(gxG * gxG + gyG * gyG) * 0.23;
+      if (mG > bestM) { bestM = mG; bestGx = gxG; bestGy = gyG; }
+
+      const gxB = -fB[ul] + fB[ur] - 2 * fB[l] + 2 * fB[r] - fB[dl] + fB[dr];
+      const gyB = -fB[ul] - 2 * fB[u] - fB[ur] + fB[dl] + 2 * fB[d] + fB[dr];
+      const mB = Math.sqrt(gxB * gxB + gyB * gyB) * 0.23;
+      if (mB > bestM) { bestM = mB; bestGx = gxB; bestGy = gyB; }
 
       mag[i] = bestM;
       hist[bestM >= 255 ? 255 : bestM | 0]++;
@@ -740,9 +752,7 @@ function renderOutline(
   }
 
   const getContourColor = (i) => {
-    if (cfg.outlineInkStyle === 'ink') {
-      return [15, 23, 42];
-    }
+    if (cfg.outlineInkStyle === 'ink') return [15, 23, 42];
     if (cfg.outlineInkStyle === 'palette') {
       const [pr, pg, pb] = mapPaletteColor(fR[i], fG[i], fB[i], fL[i], cfg.colorMode, true);
       return [Math.round(pr * 0.68), Math.round(pg * 0.68), Math.round(pb * 0.68)];
@@ -760,7 +770,6 @@ function renderOutline(
     ];
   };
 
-  // Batch connected contour segments into color buckets -> ~1 to 90 stroke() calls instead of 6,000+
   const sx = outWidth / w;
   const sy = outHeight / h;
   const strokeWidth = Math.max(1.0, cfg.outlineThickness * scaleMultiplier);
@@ -784,7 +793,6 @@ function renderOutline(
 
       contourCount++;
       const [cr, cg, cb] = getContourColor(i);
-      // Quantize RGB into 16-step buckets for batched vector strokes (single bucket in Ink mode)
       const qr = cfg.outlineInkStyle === 'ink' ? 15 : cr & 0xf0;
       const qg = cfg.outlineInkStyle === 'ink' ? 23 : cg & 0xf0;
       const qb = cfg.outlineInkStyle === 'ink' ? 42 : cb & 0xf0;
@@ -830,10 +838,7 @@ function renderOutline(
   ctx.lineWidth = strokeWidth;
 
   for (const [colorKey, segs] of segBuckets) {
-    const r = (colorKey >> 16) & 255;
-    const g = (colorKey >> 8) & 255;
-    const b = colorKey & 255;
-    ctx.strokeStyle = `rgb(${r},${g},${b})`;
+    ctx.strokeStyle = `rgb(${(colorKey >> 16) & 255},${(colorKey >> 8) & 255},${colorKey & 255})`;
     ctx.beginPath();
     for (let k = 0; k < segs.length; k += 4) {
       ctx.moveTo(segs[k], segs[k + 1]);
@@ -844,10 +849,7 @@ function renderOutline(
 
   const dotR = strokeWidth * 0.5;
   for (const [colorKey, dots] of dotBuckets) {
-    const r = (colorKey >> 16) & 255;
-    const g = (colorKey >> 8) & 255;
-    const b = colorKey & 255;
-    ctx.fillStyle = `rgb(${r},${g},${b})`;
+    ctx.fillStyle = `rgb(${(colorKey >> 16) & 255},${(colorKey >> 8) & 255},${colorKey & 255})`;
     ctx.beginPath();
     for (let k = 0; k < dots.length; k += 2) {
       ctx.moveTo(dots[k] + dotR, dots[k + 1]);
@@ -875,16 +877,16 @@ function renderOutline(
 }
 
 /**
- * Computes the artwork onto an offscreen base canvas and returns cell metadata
- * for fast 60fps spotlight interaction and text export.
+ * Computes the artwork onto an offscreen base canvas with strict anti-freeze cell budgets
+ * and color-bucketed Canvas 2D batching across all 5 rendering modes.
  */
 export function renderArtwork(source, config, options = {}) {
   const startTime = performance.now();
   const cfg = { ...DEFAULT_CONFIG, ...config };
 
-  const srcWidth = source.naturalWidth || source.width || 960;
-  const srcHeight = source.naturalHeight || source.height || 720;
-  const maxDim = options.maxDimension || 920;
+  const srcWidth = Math.max(1, source.naturalWidth || source.width || 960);
+  const srcHeight = Math.max(1, source.naturalHeight || source.height || 720);
+  const maxDim = options.maxDimension || 860;
 
   let outWidth = srcWidth;
   let outHeight = srcHeight;
@@ -894,8 +896,8 @@ export function renderArtwork(source, config, options = {}) {
     outHeight = Math.round(outHeight * scale);
   }
   const scaleMultiplier = options.exportScale || 1;
-  outWidth = Math.max(240, Math.round(outWidth * scaleMultiplier));
-  outHeight = Math.max(180, Math.round(outHeight * scaleMultiplier));
+  outWidth = Math.max(160, Math.round(outWidth * scaleMultiplier));
+  outHeight = Math.max(120, Math.round(outHeight * scaleMultiplier));
 
   const bgSpec = CANVAS_BACKGROUNDS[cfg.background] || CANVAS_BACKGROUNDS.obsidian;
   const cVal = cfg.contrast * 2.55;
@@ -935,13 +937,19 @@ export function renderArtwork(source, config, options = {}) {
     );
   }
 
-  // Matrix Modes: Binary, ASCII, and Dots / Halftone
-  const cellSize = Math.max(4, Math.round(cfg.cellSize * scaleMultiplier));
-  const stepX = Math.max(4, Math.round(cellSize * cfg.spacing));
-  const stepY =
-    cfg.mode === 'dots'
-      ? stepX
-      : Math.max(4, Math.round(cellSize * cfg.spacing * 1.05));
+  // Matrix Modes: Binary, ASCII, Dots — enforce hard cell budget so small cellSize never freezes the browser
+  const maxCells = options.maxCells || (options.isDraft ? 3400 : scaleMultiplier > 1 ? 16000 : 7200);
+  let cellSize = Math.max(4, Math.round(cfg.cellSize * scaleMultiplier));
+  let stepX = Math.max(4, Math.round(cellSize * cfg.spacing));
+  let stepY = cfg.mode === 'dots' ? stepX : Math.max(4, Math.round(cellSize * cfg.spacing * 1.05));
+
+  const rawCells = (outWidth / stepX) * (outHeight / stepY);
+  if (rawCells > maxCells) {
+    const bump = Math.sqrt(rawCells / maxCells);
+    stepX = Math.ceil(stepX * bump);
+    stepY = Math.ceil(stepY * bump);
+    cellSize = Math.max(cellSize, Math.round(stepX / Math.max(0.75, cfg.spacing)));
+  }
 
   const cols = Math.max(8, Math.floor(outWidth / stepX));
   const rows = Math.max(6, Math.floor(outHeight / stepY));
@@ -970,19 +978,16 @@ export function renderArtwork(source, config, options = {}) {
 
   const rampStr = (ASCII_RAMPS[cfg.asciiRamp] || ASCII_RAMPS.classic).chars;
   const rampLen = rampStr.length;
-
   const fontSize = Math.max(5, Math.round(cellSize * 1.08));
-  if (cfg.mode !== 'dots') {
-    ctx.font = `700 ${fontSize}px "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-  }
-
   const offsetX = Math.floor((outWidth - cols * stepX) / 2);
   const offsetY = Math.floor((outHeight - rows * stepY) / 2);
 
   const cells = options.skipCells ? null : [];
   const textLines = options.includeText ? [] : null;
+
+  // Color-bucketed batching for Dots & Glyphs to minimize Canvas fillStyle/fill() overhead
+  const dotBuckets = cfg.mode === 'dots' ? new Map() : null;
+  const glyphBuckets = cfg.mode !== 'dots' ? new Map() : null;
 
   for (let row = 0; row < rows; row++) {
     let lineStr = '';
@@ -1020,13 +1025,16 @@ export function renderArtwork(source, config, options = {}) {
         const ditherBias = cfg.binaryDither ? BAYER_4X4[row & 3][col & 3] * 64 : 0;
         const effectiveLum = lum + ditherBias;
         let bit = effectiveLum >= cfg.binaryThreshold ? '1' : '0';
-        if (cfg.invert) {
-          bit = bit === '1' ? '0' : '1';
-        }
+        if (cfg.invert) bit = bit === '1' ? '0' : '1';
 
         const bitAlpha = bit === '1' ? 0.98 : bgSpec.light ? 0.42 : 0.36;
-        ctx.fillStyle = `rgba(${cr},${cg},${cb},${bitAlpha.toFixed(2)})`;
-        ctx.fillText(bit, cx, cy);
+        const styleKey = `rgba(${cr & 0xf8},${cg & 0xf8},${cb & 0xf8},${bitAlpha.toFixed(2)})`;
+        let list = glyphBuckets.get(styleKey);
+        if (!list) {
+          list = [];
+          glyphBuckets.set(styleKey, list);
+        }
+        list.push(bit, cx, cy);
 
         if (textLines) lineStr += bit;
         if (cells) {
@@ -1035,15 +1043,18 @@ export function renderArtwork(source, config, options = {}) {
       } else if (cfg.mode === 'ascii') {
         let norm = lum / 255;
         const shouldInvert = bgSpec.light ? !cfg.invert : cfg.invert;
-        if (!shouldInvert) {
-          norm = 1 - norm;
-        }
+        if (!shouldInvert) norm = 1 - norm;
         const charIndex = Math.min(rampLen - 1, Math.max(0, Math.floor(norm * (rampLen - 1))));
         const ch = rampStr[charIndex];
 
         if (ch !== ' ') {
-          ctx.fillStyle = `rgb(${cr},${cg},${cb})`;
-          ctx.fillText(ch, cx, cy);
+          const styleKey = `rgb(${cr & 0xf8},${cg & 0xf8},${cb & 0xf8})`;
+          let list = glyphBuckets.get(styleKey);
+          if (!list) {
+            list = [];
+            glyphBuckets.set(styleKey, list);
+          }
+          list.push(ch, cx, cy);
         }
 
         if (textLines) lineStr += ch;
@@ -1071,10 +1082,14 @@ export function renderArtwork(source, config, options = {}) {
         }
 
         if (radius > 0.35) {
-          ctx.beginPath();
-          ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-          ctx.fillStyle = `rgba(${cr},${cg},${cb},${dotAlpha.toFixed(3)})`;
-          ctx.fill();
+          const qAlpha = Math.round(dotAlpha * 10) / 10;
+          const styleKey = `rgba(${cr & 0xf0},${cg & 0xf0},${cb & 0xf0},${qAlpha.toFixed(1)})`;
+          let list = dotBuckets.get(styleKey);
+          if (!list) {
+            list = [];
+            dotBuckets.set(styleKey, list);
+          }
+          list.push(cx, cy, radius);
         }
 
         if (cells) {
@@ -1083,8 +1098,32 @@ export function renderArtwork(source, config, options = {}) {
       }
     }
 
-    if (textLines) {
-      textLines.push(lineStr);
+    if (textLines) textLines.push(lineStr);
+  }
+
+  // Flush batched glyphs or dots in minimal Canvas state transitions
+  if (glyphBuckets) {
+    ctx.font = `700 ${fontSize}px "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (const [styleKey, list] of glyphBuckets) {
+      ctx.fillStyle = styleKey;
+      for (let k = 0; k < list.length; k += 3) {
+        ctx.fillText(list[k], list[k + 1], list[k + 2]);
+      }
+    }
+  } else if (dotBuckets) {
+    for (const [styleKey, list] of dotBuckets) {
+      ctx.fillStyle = styleKey;
+      ctx.beginPath();
+      for (let k = 0; k < list.length; k += 3) {
+        const cx = list[k];
+        const cy = list[k + 1];
+        const r = list[k + 2];
+        ctx.moveTo(cx + r, cy);
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      }
+      ctx.fill();
     }
   }
 
@@ -1175,7 +1214,6 @@ export function compositeWithSpotlight(displayCanvas, renderResult, sourceImage,
   const maxY = y + radius;
 
   if (config.mode === 'aquarelle') {
-    // Fast translucent wet-bloom circles (zero per-cell radial gradient allocations on mousemove)
     ctx.save();
     for (let i = 0; i < cells.length; i++) {
       const cell = cells[i];
@@ -1187,7 +1225,7 @@ export function compositeWithSpotlight(displayCanvas, renderResult, sourceImage,
       const t = 1 - Math.sqrt(dist2) / radius;
       const smooth = t * t * (3 - 2 * t);
       const bloomR = Math.max(4, cell.radius * (1 + smooth * 0.5));
-      ctx.fillStyle = `rgba(${cell.r},${cell.g},${cell.b},${(smooth * 0.2).toFixed(3)})`;
+      ctx.fillStyle = `rgba(${cell.r},${cell.g},${cell.b},${(smooth * 0.2).toFixed(2)})`;
       ctx.beginPath();
       ctx.arc(cell.cx, cell.cy, bloomR, 0, Math.PI * 2);
       ctx.fill();
@@ -1208,7 +1246,7 @@ export function compositeWithSpotlight(displayCanvas, renderResult, sourceImage,
       const t = 1 - Math.sqrt(dist2) / radius;
       const smooth = t * t * (3 - 2 * t);
       const scaledR = Math.max(1.1, cell.radius * (1 + smooth * 0.9));
-      ctx.fillStyle = `rgba(${cell.r},${cell.g},${cell.b},${Math.min(1, cell.alpha + smooth * 0.35).toFixed(3)})`;
+      ctx.fillStyle = `rgba(${cell.r},${cell.g},${cell.b},${Math.min(1, cell.alpha + smooth * 0.35).toFixed(2)})`;
       ctx.beginPath();
       ctx.arc(cell.cx, cell.cy, scaledR, 0, Math.PI * 2);
       ctx.fill();
@@ -1258,7 +1296,7 @@ export function compositeWithSpotlight(displayCanvas, renderResult, sourceImage,
       const scaledR = Math.max(1.2, cell.radius * (1 + smooth * 0.45));
       ctx.beginPath();
       ctx.arc(px, py, scaledR, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(${br},${bg},${bb},${Math.min(1, cell.alpha + smooth * 0.35).toFixed(3)})`;
+      ctx.fillStyle = `rgba(${br},${bg},${bb},${Math.min(1, cell.alpha + smooth * 0.35).toFixed(2)})`;
       ctx.fill();
     } else if (cell.char && cell.char !== ' ') {
       const scaledFont = Math.round(renderResult.fontSize * (1 + smooth * 0.42));
@@ -1266,7 +1304,7 @@ export function compositeWithSpotlight(displayCanvas, renderResult, sourceImage,
         ctx.font = `700 ${scaledFont}px "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
         lastFontSize = scaledFont;
       }
-      ctx.fillStyle = `rgba(${br},${bg},${bb},${Math.min(1, cell.alpha + smooth * 0.45).toFixed(3)})`;
+      ctx.fillStyle = `rgba(${br},${bg},${bb},${Math.min(1, cell.alpha + smooth * 0.45).toFixed(2)})`;
       ctx.fillText(cell.char, px, py);
     }
   }

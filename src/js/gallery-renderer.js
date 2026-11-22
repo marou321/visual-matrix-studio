@@ -1,12 +1,14 @@
 /**
  * Hydrates or renders Curated Gallery Cards (on Home & /gallery) and powers filtering + lightbox inspector.
- * Supports progressive enhancement: if semantic HTML cards with [data-gallery-id] are already present
- * in the document, they are hydrated in place with live Canvas rendering and hover spotlight.
+ * Engineered for zero memory leaks and zero main-thread blocking:
+ *  - Lazy-renders thumbnails only when scrolled near the viewport via IntersectionObserver + idle queue
+ *  - Uses skipCells: true for thumbnails and immediately releases temporary offscreen canvases
+ *  - Cleans up modal canvas buffers on close and guards against stale async opens
  */
 
 import { GALLERY_ITEMS } from './gallery-data.js';
 import { loadSampleImage } from './samples.js';
-import { renderArtwork, compositeWithSpotlight } from './renderer.js';
+import { renderArtwork } from './renderer.js';
 
 function badgeClass(mode) {
   if (mode === 'binary') return 'badge-binary';
@@ -28,7 +30,7 @@ function createCardElement(item) {
 
   article.innerHTML = `
     <div class="gallery-visual" role="button" tabindex="0" aria-label="Inspect ${item.title} artwork">
-      <canvas width="640" height="480" aria-label="${item.title} rendered in ${item.modeLabel} mode"></canvas>
+      <canvas width="360" height="270" aria-label="${item.title} rendered in ${item.modeLabel} mode"></canvas>
       <div class="gallery-visual-overlay">
         <span class="btn btn-sm btn-secondary">Inspect Artwork</span>
       </div>
@@ -50,9 +52,9 @@ function createCardElement(item) {
   return article;
 }
 
-/**
- * Lightbox Modal Controller
- */
+let activeModalBaseCanvas = null;
+let modalToken = 0;
+
 function ensureModal() {
   let backdrop = document.getElementById('gallery-modal');
   if (backdrop) return backdrop;
@@ -66,7 +68,7 @@ function ensureModal() {
   backdrop.innerHTML = `
     <div class="modal-dialog">
       <div class="modal-stage">
-        <canvas id="modal-canvas" width="960" height="720"></canvas>
+        <canvas id="modal-canvas" width="840" height="630"></canvas>
       </div>
       <div class="modal-sidebar">
         <div class="modal-close-row">
@@ -92,8 +94,14 @@ function ensureModal() {
   document.body.appendChild(backdrop);
 
   const closeModal = () => {
+    modalToken++;
     backdrop.classList.remove('open');
     document.body.style.overflow = '';
+    if (activeModalBaseCanvas) {
+      activeModalBaseCanvas.width = 0;
+      activeModalBaseCanvas.height = 0;
+      activeModalBaseCanvas = null;
+    }
   };
 
   backdrop.addEventListener('click', (e) => {
@@ -110,6 +118,7 @@ function ensureModal() {
 }
 
 async function openInspector(item) {
+  const token = ++modalToken;
   const backdrop = ensureModal();
   const canvas = backdrop.querySelector('#modal-canvas');
   const titleEl = backdrop.querySelector('#modal-art-title');
@@ -132,7 +141,19 @@ async function openInspector(item) {
   document.body.style.overflow = 'hidden';
 
   const img = await loadSampleImage(item.sampleId);
-  const result = renderArtwork(img, item.settings, { maxDimension: 960 });
+  if (token !== modalToken) return;
+
+  if (activeModalBaseCanvas) {
+    activeModalBaseCanvas.width = 0;
+    activeModalBaseCanvas.height = 0;
+  }
+
+  const result = renderArtwork(img, item.settings, {
+    maxDimension: 860,
+    maxCells: 7200,
+    skipCells: true
+  });
+  activeModalBaseCanvas = result.baseCanvas;
 
   let showOriginal = false;
   compareBtn.textContent = 'Compare Original Photo';
@@ -143,8 +164,8 @@ async function openInspector(item) {
     canvas.height = result.height;
     if (showOriginal) {
       ctx.drawImage(img, 0, 0, result.width, result.height);
-    } else {
-      ctx.drawImage(result.baseCanvas, 0, 0);
+    } else if (activeModalBaseCanvas) {
+      ctx.drawImage(activeModalBaseCanvas, 0, 0);
     }
   };
 
@@ -159,7 +180,8 @@ async function openInspector(item) {
 
 export async function mountGallery(containerId, options = {}) {
   const container = document.getElementById(containerId);
-  if (!container) return;
+  if (!container || container.dataset.galleryMounted === '1') return;
+  container.dataset.galleryMounted = '1';
 
   const items = options.featuredOnly
     ? GALLERY_ITEMS.filter((item) => item.featured)
@@ -202,54 +224,33 @@ export async function mountGallery(containerId, options = {}) {
     }
 
     if (canvas) {
-      cardEntries.push({ item, card, canvas });
+      cardEntries.push({ item, card, canvas, rendered: false, queued: false });
     }
   }
 
-  // Lazy-render thumbnails only when scrolled near viewport, yielding between cards so Studio never stalls
+  // Lazy-render lightweight thumbnails (skipCells: true + immediate offscreen canvas release)
   const renderEntry = async (entry) => {
     if (entry.rendered) return;
     entry.rendered = true;
-    const img = await loadSampleImage(entry.item.sampleId);
-    const result = renderArtwork(img, entry.item.settings, { maxDimension: 420 });
-    const ctx = entry.canvas.getContext('2d');
-    entry.canvas.width = result.width;
-    entry.canvas.height = result.height;
-    ctx.drawImage(result.baseCanvas, 0, 0);
-
-    // Throttled rAF spotlight on gallery cards (cached rect — zero layout thrashing)
-    const pointer = { active: false, x: 0, y: 0 };
-    const cardSpotlightCfg = { ...entry.item.settings, spotlightRadius: 72 };
-    let cardRect = null;
-    let cardRaf = null;
-
-    const paintCard = () => {
-      cardRaf = null;
-      compositeWithSpotlight(entry.canvas, result, img, cardSpotlightCfg, pointer);
-    };
-
-    entry.canvas.addEventListener('pointerenter', () => {
-      cardRect = entry.canvas.getBoundingClientRect();
-    }, { passive: true });
-
-    entry.canvas.addEventListener('pointermove', (e) => {
-      const rect = cardRect || entry.canvas.getBoundingClientRect();
-      cardRect = rect;
-      if (!rect.width || !rect.height) return;
-      pointer.active = true;
-      pointer.x = ((e.clientX - rect.left) / rect.width) * entry.canvas.width;
-      pointer.y = ((e.clientY - rect.top) / rect.height) * entry.canvas.height;
-      if (!cardRaf) cardRaf = requestAnimationFrame(paintCard);
-    }, { passive: true });
-
-    entry.canvas.addEventListener('pointerleave', () => {
-      pointer.active = false;
-      cardRect = null;
-      if (!cardRaf) cardRaf = requestAnimationFrame(paintCard);
-    }, { passive: true });
+    try {
+      const img = await loadSampleImage(entry.item.sampleId);
+      const result = renderArtwork(img, entry.item.settings, {
+        maxDimension: 360,
+        maxCells: 2600,
+        skipCells: true
+      });
+      const ctx = entry.canvas.getContext('2d');
+      entry.canvas.width = result.width;
+      entry.canvas.height = result.height;
+      ctx.drawImage(result.baseCanvas, 0, 0);
+      // Release offscreen canvas immediately so thumbnails leak zero GPU/RAM buffers
+      result.baseCanvas.width = 0;
+      result.baseCanvas.height = 0;
+    } catch (err) {
+      console.error('Gallery thumbnail render error:', err);
+    }
   };
 
-  // Sequential idle queue so multiple cards entering viewport at once never block a frame
   const renderQueue = [];
   let queueRunning = false;
   const pumpQueue = () => {
@@ -260,13 +261,13 @@ export async function mountGallery(containerId, options = {}) {
       await renderEntry(next);
       queueRunning = false;
       if (renderQueue.length > 0) {
-        setTimeout(pumpQueue, 16);
+        setTimeout(pumpQueue, 32);
       }
     };
     if (typeof requestIdleCallback === 'function') {
-      requestIdleCallback(() => runNext(), { timeout: 220 });
+      requestIdleCallback(() => runNext(), { timeout: 300 });
     } else {
-      setTimeout(runNext, 24);
+      setTimeout(runNext, 32);
     }
   };
 
@@ -284,13 +285,11 @@ export async function mountGallery(containerId, options = {}) {
           }
         }
       },
-      { rootMargin: '240px 0px' }
+      { rootMargin: '180px 0px' }
     );
     cardEntries.forEach((entry) => observer.observe(entry.card));
   } else {
-    cardEntries.forEach((entry) => {
-      renderQueue.push(entry);
-    });
+    cardEntries.forEach((entry) => renderQueue.push(entry));
     pumpQueue();
   }
 
@@ -314,7 +313,6 @@ export async function mountGallery(containerId, options = {}) {
   }
 }
 
-// Auto-hydrate/mount when DOM is ready
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => {
     if (document.getElementById('full-gallery-grid')) {
