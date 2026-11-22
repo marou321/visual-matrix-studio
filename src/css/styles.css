@@ -42,6 +42,14 @@
   --badge-dots-fg: #f9a8d4;
   --badge-dots-border: rgba(244, 114, 182, 0.3);
 
+  --badge-aquarelle-bg: rgba(45, 212, 191, 0.14);
+  --badge-aquarelle-fg: #5eead4;
+  --badge-aquarelle-border: rgba(45, 212, 191, 0.32);
+
+  --badge-outline-bg: rgba(251, 191, 36, 0.14);
+  --badge-outline-fg: #fcd34d;
+  --badge-outline-border: rgba(251, 191, 36, 0.32);
+
   --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.25);
   --shadow-md: 0 12px 32px rgba(0, 0, 0, 0.38);
   --shadow-lg: 0 24px 64px rgba(0, 0, 0, 0.52);
@@ -97,6 +105,14 @@
   --badge-dots-bg: rgba(219, 39, 119, 0.1);
   --badge-dots-fg: #be185d;
   --badge-dots-border: rgba(219, 39, 119, 0.25);
+
+  --badge-aquarelle-bg: rgba(13, 148, 136, 0.1);
+  --badge-aquarelle-fg: #0f766e;
+  --badge-aquarelle-border: rgba(13, 148, 136, 0.28);
+
+  --badge-outline-bg: rgba(217, 119, 6, 0.1);
+  --badge-outline-fg: #b45309;
+  --badge-outline-border: rgba(217, 119, 6, 0.28);
 
   --shadow-sm: 0 2px 8px rgba(15, 23, 42, 0.06);
   --shadow-md: 0 10px 28px rgba(15, 23, 42, 0.08);
@@ -429,6 +445,18 @@ button, input, select, textarea {
   background: var(--badge-dots-bg);
   color: var(--badge-dots-fg);
   border-color: var(--badge-dots-border);
+}
+
+.badge-aquarelle {
+  background: var(--badge-aquarelle-bg);
+  color: var(--badge-aquarelle-fg);
+  border-color: var(--badge-aquarelle-border);
+}
+
+.badge-outline {
+  background: var(--badge-outline-bg);
+  color: var(--badge-outline-fg);
+  border-color: var(--badge-outline-border);
 }
 
 /* ==========================================================================
@@ -765,9 +793,9 @@ button, input, select, textarea {
 
 .mode-tabs {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 0.4rem;
-  padding: 0.9rem 1rem;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.34rem;
+  padding: 0.8rem 0.85rem;
   border-bottom: 1px solid var(--border);
   background: var(--bg-elevated);
   position: sticky;
@@ -779,13 +807,14 @@ button, input, select, textarea {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.22rem;
-  padding: 0.62rem 0.45rem;
+  justify-content: center;
+  gap: 0.18rem;
+  padding: 0.54rem 0.25rem;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
   background: var(--bg-input);
   color: var(--text-muted);
-  font-size: 0.8rem;
+  font-size: 0.72rem;
   font-weight: 600;
   cursor: pointer;
   transition: all var(--transition);
@@ -793,7 +822,7 @@ button, input, select, textarea {
 
 .mode-tab .mode-glyph {
   font-family: var(--font-mono);
-  font-size: 0.95rem;
+  font-size: 0.86rem;
   font-weight: 700;
 }
 
@@ -812,6 +841,8 @@ button, input, select, textarea {
 .mode-tab[data-mode="binary"].active .mode-glyph { color: var(--accent-emerald); }
 .mode-tab[data-mode="ascii"].active .mode-glyph { color: var(--accent); }
 .mode-tab[data-mode="dots"].active .mode-glyph { color: var(--accent-pink); }
+.mode-tab[data-mode="aquarelle"].active .mode-glyph { color: #2dd4bf; }
+.mode-tab[data-mode="outline"].active .mode-glyph { color: var(--accent-amber); }
 
 .inspector-body {
   padding: 1rem 1.15rem 1.35rem;

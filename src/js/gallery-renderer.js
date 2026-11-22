@@ -11,6 +11,8 @@ import { renderArtwork, compositeWithSpotlight } from './renderer.js';
 function badgeClass(mode) {
   if (mode === 'binary') return 'badge-binary';
   if (mode === 'dots') return 'badge-dots';
+  if (mode === 'aquarelle') return 'badge-aquarelle';
+  if (mode === 'outline') return 'badge-outline';
   return 'badge-ascii';
 }
 

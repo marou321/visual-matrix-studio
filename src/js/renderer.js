@@ -1,9 +1,11 @@
 /**
  * ChromaGlyph Studio — Core Color-True Rendering Engine
  * Modes:
- *  - binary: 0/1 character art mapped by luminance threshold (with optional Bayer 4x4 dithering)
- *  - ascii:  Multi-ramp character art mapped by optical density & real RGB or curated palettes
- *  - dots:   Halftone dot matrix with radius/opacity response and square or hexagonal grids
+ *  - binary:    0/1 character art mapped by luminance threshold (with optional Bayer 4x4 dithering)
+ *  - ascii:     Multi-ramp character art mapped by optical density & real RGB or curated palettes
+ *  - dots:      Halftone dot matrix with radius/opacity response and square or hexagonal grids
+ *  - aquarelle: Layered translucent watercolor washes, pigment bleed, capillary rims & paper grain
+ *  - outline:   Color-aware contour/silhouette extraction with pure white (#FFFFFF) hollow interior
  *
  * Includes a 60fps interactive spotlight/hover overlay powered by cached cell geometry.
  */
@@ -45,8 +47,8 @@ export const CANVAS_BACKGROUNDS = {
   obsidian: { label: 'Obsidian', hex: '#06080f', light: false },
   black: { label: 'Pure Black', hex: '#000000', light: false },
   slate: { label: 'Deep Slate', hex: '#141a26', light: false },
-  paper: { label: 'Gallery Paper', hex: '#f8fafc', light: true },
-  warm: { label: 'Warm Cream', hex: '#f5f0e6', light: true }
+  paper: { label: 'Gallery Paper', hex: '#ffffff', light: true },
+  warm: { label: 'Warm Cream', hex: '#f7f2e8', light: true }
 };
 
 export const DEFAULT_CONFIG = {
@@ -69,6 +71,16 @@ export const DEFAULT_CONFIG = {
   dotStyle: 'brightness', // 'brightness' | 'darkness' | 'opacity'
   dotHexGrid: false,
   dotScale: 0.92,
+  // Aquarelle (Watercolor) specific
+  aquarelleSoftness: 62, // 20..100 wash spread & wet-on-wet bleed
+  aquarellePigment: 92,  // 30..150 pigment intensity & edge pooling
+  aquarelleDetail: 3,    // 1..5 brush pass detail scale
+  aquarellePaperGrain: true,
+  // Shape / Hollow Outline specific
+  outlineThreshold: 34,   // 10..90 edge/shape sensitivity threshold
+  outlineThickness: 2.2,  // 1..6 outline stroke thickness
+  outlineDetail: 3,       // 1..5 silhouette simplicity vs fine contour detail
+  outlineInkStyle: 'rgb', // 'rgb' | 'ink' | 'palette'
   // Interactive spotlight
   spotlightMode: 'magnify', // 'magnify' | 'reveal' | 'glow' | 'off'
   spotlightRadius: 115
@@ -86,8 +98,19 @@ function clamp255(v) {
   return v < 0 ? 0 : v > 255 ? 255 : v;
 }
 
+// Fast deterministic PRNG so watercolor washes stay steady across slider updates
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 function adjustPixelColor(r, g, b, contrastFactor, brightnessOffset, satFactor) {
-  // Contrast + brightness
   let nr = (r - 128) * contrastFactor + 128 + brightnessOffset;
   let ng = (g - 128) * contrastFactor + 128 + brightnessOffset;
   let nb = (b - 128) * contrastFactor + 128 + brightnessOffset;
@@ -96,7 +119,6 @@ function adjustPixelColor(r, g, b, contrastFactor, brightnessOffset, satFactor) 
   ng = clamp255(ng);
   nb = clamp255(nb);
 
-  // Saturation around Rec. 709 luma
   if (satFactor !== 1) {
     const luma = 0.2126 * nr + 0.7152 * ng + 0.0722 * nb;
     nr = clamp255(luma + (nr - luma) * satFactor);
@@ -143,7 +165,6 @@ function mapPaletteColor(r, g, b, lum, palette, isLightBg) {
       ];
     }
     case 'duotone': {
-      // Blend deep violet-indigo shadows into electric cyan/pink highlights
       const dr = Math.round(98 + t * 146);
       const dg = Math.round(64 + t * 136);
       const db = Math.round(220 + t * 35);
@@ -153,6 +174,616 @@ function mapPaletteColor(r, g, b, lum, palette, isLightBg) {
     default:
       return [Math.round(r), Math.round(g), Math.round(b)];
   }
+}
+
+// Cached procedural cold-press watercolor paper grain tile
+let cachedPaperPatternCanvas = null;
+
+function getPaperGrainTile() {
+  if (cachedPaperPatternCanvas) return cachedPaperPatternCanvas;
+  const size = 160;
+  const tile = document.createElement('canvas');
+  tile.width = size;
+  tile.height = size;
+  const tctx = tile.getContext('2d');
+  const imgData = tctx.createImageData(size, size);
+  const d = imgData.data;
+  const rand = mulberry32(42197);
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const idx = (y * size + x) * 4;
+      // Combine fine tooth grain with subtle organic fiber wave
+      const wave =
+        Math.sin(x * 0.19 + y * 0.07) * 6 +
+        Math.cos(y * 0.23 - x * 0.05) * 5;
+      const noise = (rand() - 0.5) * 26;
+      const shade = clamp255(238 + wave + noise);
+      d[idx] = shade;
+      d[idx + 1] = clamp255(shade - 2);
+      d[idx + 2] = clamp255(shade - 6);
+      d[idx + 3] = 28;
+    }
+  }
+  tctx.putImageData(imgData, 0, 0);
+  cachedPaperPatternCanvas = tile;
+  return tile;
+}
+
+/**
+ * Separable box blur over a flat RGB + Luminance buffer for clean shape simplification.
+ */
+function smoothField(srcR, srcG, srcB, w, h, radius) {
+  if (radius <= 0) return { r: srcR, g: srcG, b: srcB };
+  const len = w * h;
+  const tmpR = new Float32Array(len);
+  const tmpG = new Float32Array(len);
+  const tmpB = new Float32Array(len);
+  const outR = new Float32Array(len);
+  const outG = new Float32Array(len);
+  const outB = new Float32Array(len);
+
+  // Horizontal pass
+  for (let y = 0; y < h; y++) {
+    const rowOff = y * w;
+    for (let x = 0; x < w; x++) {
+      let sr = 0;
+      let sg = 0;
+      let sb = 0;
+      let count = 0;
+      const x0 = Math.max(0, x - radius);
+      const x1 = Math.min(w - 1, x + radius);
+      for (let k = x0; k <= x1; k++) {
+        const i = rowOff + k;
+        sr += srcR[i];
+        sg += srcG[i];
+        sb += srcB[i];
+        count++;
+      }
+      const dst = rowOff + x;
+      tmpR[dst] = sr / count;
+      tmpG[dst] = sg / count;
+      tmpB[dst] = sb / count;
+    }
+  }
+
+  // Vertical pass
+  for (let y = 0; y < h; y++) {
+    const y0 = Math.max(0, y - radius);
+    const y1 = Math.min(h - 1, y + radius);
+    for (let x = 0; x < w; x++) {
+      let sr = 0;
+      let sg = 0;
+      let sb = 0;
+      let count = 0;
+      for (let k = y0; k <= y1; k++) {
+        const i = k * w + x;
+        sr += tmpR[i];
+        sg += tmpG[i];
+        sb += tmpB[i];
+        count++;
+      }
+      const dst = y * w + x;
+      outR[dst] = sr / count;
+      outG[dst] = sg / count;
+      outB[dst] = sb / count;
+    }
+  }
+
+  return { r: outR, g: outG, b: outB };
+}
+
+/**
+ * Aquarelle (Watercolor) Rendering Mode
+ * Multi-pass translucent washes, wet-on-wet radial bleeds, capillary drying rims, and paper tooth.
+ */
+function renderAquarelle(
+  source,
+  cfg,
+  outWidth,
+  outHeight,
+  scaleMultiplier,
+  contrastFactor,
+  brightnessOffset,
+  satFactor,
+  bgSpec,
+  options,
+  startTime
+) {
+  const baseCanvas = document.createElement('canvas');
+  baseCanvas.width = outWidth;
+  baseCanvas.height = outHeight;
+  const ctx = baseCanvas.getContext('2d');
+
+  // Watercolor naturally lives on light paper; respect dark swatches gracefully if chosen
+  const paperHex = bgSpec.light ? bgSpec.hex : bgSpec.hex;
+  ctx.fillStyle = paperHex;
+  ctx.fillRect(0, 0, outWidth, outHeight);
+
+  // Soft misty photographic wash base so tonal continuity feels genuinely wet-on-wet
+  const softnessNorm = (cfg.aquarelleSoftness - 20) / 80; // 0..1
+  const pigmentNorm = cfg.aquarellePigment / 100;         // 0.3..1.5
+  const detailLevel = Math.max(1, Math.min(5, Math.round(cfg.aquarelleDetail)));
+
+  // Softly paint a blurred watercolor under-wash
+  const underCanvas = document.createElement('canvas');
+  const underW = Math.max(36, Math.round(outWidth / (16 + softnessNorm * 16)));
+  const underH = Math.max(27, Math.round(outHeight / (16 + softnessNorm * 16)));
+  underCanvas.width = underW;
+  underCanvas.height = underH;
+  const uctx = underCanvas.getContext('2d', { willReadFrequently: true });
+  uctx.drawImage(source, 0, 0, underW, underH);
+  const uData = uctx.getImageData(0, 0, underW, underH);
+  for (let i = 0; i < uData.data.length; i += 4) {
+    const [ar, ag, ab] = adjustPixelColor(
+      uData.data[i],
+      uData.data[i + 1],
+      uData.data[i + 2],
+      contrastFactor,
+      brightnessOffset,
+      satFactor
+    );
+    const lum = 0.2126 * ar + 0.7152 * ag + 0.0722 * ab;
+    const [cr, cg, cb] = mapPaletteColor(ar, ag, ab, lum, cfg.colorMode, bgSpec.light);
+    uData.data[i] = cr;
+    uData.data[i + 1] = cg;
+    uData.data[i + 2] = cb;
+  }
+  uctx.putImageData(uData, 0, 0);
+
+  ctx.save();
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.globalAlpha = Math.min(0.75, 0.32 + pigmentNorm * 0.24);
+  if (bgSpec.light) {
+    ctx.globalCompositeOperation = 'multiply';
+  }
+  ctx.drawImage(underCanvas, 0, 0, outWidth, outHeight);
+  ctx.restore();
+
+  // Optional subtle original photographic underlay if user dialed it in
+  if (cfg.underlayOpacity > 0) {
+    ctx.save();
+    ctx.globalAlpha = cfg.underlayOpacity;
+    ctx.drawImage(source, 0, 0, outWidth, outHeight);
+    ctx.restore();
+  }
+
+  const rand = mulberry32(133791);
+  const cells = options.skipCells ? null : [];
+
+  // Pass 1 (Broad Wet Washes) + Pass 2 (Mid/Fine Pigment Dabs & Capillary Rims)
+  const basePitch = Math.max(8, Math.round((cfg.cellSize * 2.1 - detailLevel * 2.1) * scaleMultiplier));
+  const passes = [
+    {
+      step: Math.max(18, Math.round(basePitch * 1.9 * cfg.spacing)),
+      radiusMul: 1.45 + softnessNorm * 1.05,
+      alpha: Math.min(0.46, 0.16 * pigmentNorm + 0.08),
+      drawRim: false,
+      recordCells: false
+    },
+    {
+      step: Math.max(10, Math.round(basePitch * 1.0 * cfg.spacing)),
+      radiusMul: 0.92 + softnessNorm * 0.65,
+      alpha: Math.min(0.55, 0.22 * pigmentNorm + 0.09),
+      drawRim: true,
+      recordCells: true
+    },
+    {
+      step: Math.max(6, Math.round(basePitch * (0.72 - detailLevel * 0.06) * cfg.spacing)),
+      radiusMul: 0.68 + softnessNorm * 0.38,
+      alpha: Math.min(0.58, 0.2 * pigmentNorm + 0.07),
+      drawRim: detailLevel >= 3,
+      recordCells: false
+    }
+  ];
+
+  let finalCols = 0;
+  let finalRows = 0;
+
+  for (let pIdx = 0; pIdx < passes.length; pIdx++) {
+    const pass = passes[pIdx];
+    const cols = Math.max(10, Math.floor(outWidth / pass.step));
+    const rows = Math.max(8, Math.floor(outHeight / pass.step));
+    if (pIdx === 1) {
+      finalCols = cols;
+      finalRows = rows;
+    }
+
+    const sCanvas = document.createElement('canvas');
+    sCanvas.width = cols;
+    sCanvas.height = rows;
+    const sCtx = sCanvas.getContext('2d', { willReadFrequently: true });
+    sCtx.drawImage(source, 0, 0, cols, rows);
+    const data = sCtx.getImageData(0, 0, cols, rows).data;
+
+    ctx.save();
+    ctx.globalCompositeOperation = bgSpec.light ? 'multiply' : 'source-over';
+
+    for (let row = 0; row < rows; row++) {
+      for (let col = 0; col < cols; col++) {
+        const idx = (row * cols + col) * 4;
+        if (data[idx + 3] < 16) continue;
+
+        const [ar, ag, ab] = adjustPixelColor(
+          data[idx],
+          data[idx + 1],
+          data[idx + 2],
+          contrastFactor,
+          brightnessOffset,
+          satFactor
+        );
+        const lum = 0.2126 * ar + 0.7152 * ag + 0.0722 * ab;
+        const [cr, cg, cb] = mapPaletteColor(ar, ag, ab, lum, cfg.colorMode, bgSpec.light);
+
+        // Skip near-white highlights on light paper so paper shines through naturally like true watercolor
+        if (bgSpec.light && lum > 242 && pIdx > 0) continue;
+
+        const jitterX = (rand() - 0.5) * pass.step * (0.55 + softnessNorm * 0.35);
+        const jitterY = (rand() - 0.5) * pass.step * (0.55 + softnessNorm * 0.35);
+        const cx = (col + 0.5) * (outWidth / cols) + jitterX;
+        const cy = (row + 0.5) * (outHeight / rows) + jitterY;
+        const r = pass.step * pass.radiusMul * (0.78 + rand() * 0.44);
+
+        // Organic layered radial wash gradient (feathered bleed)
+        const grad = ctx.createRadialGradient(cx, cy, r * 0.1, cx, cy, r);
+        const coreAlpha = pass.alpha * (cfg.invert ? 0.55 + (lum / 255) * 0.6 : 0.75 + (1 - lum / 255) * 0.4);
+        grad.addColorStop(0, `rgba(${cr},${cg},${cb},${Math.min(0.75, coreAlpha).toFixed(3)})`);
+        grad.addColorStop(0.58, `rgba(${cr},${cg},${cb},${Math.min(0.52, coreAlpha * 0.65).toFixed(3)})`);
+        grad.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
+
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        const scaleX = 0.78 + rand() * 0.48;
+        const scaleY = 0.78 + rand() * 0.48;
+        const rot = rand() * Math.PI;
+        ctx.ellipse(cx, cy, r * scaleX, r * scaleY, rot, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Subtle capillary pigment rim (drying watercolor edge ring)
+        if (pass.drawRim && rand() > 0.48) {
+          const rimR = clamp255(cr * 0.82);
+          const rimG = clamp255(cg * 0.82);
+          const rimB = clamp255(cb * 0.82);
+          ctx.strokeStyle = `rgba(${Math.round(rimR)},${Math.round(rimG)},${Math.round(rimB)},${(pass.alpha * 0.34).toFixed(3)})`;
+          ctx.lineWidth = Math.max(0.8, 1.3 * scaleMultiplier);
+          ctx.beginPath();
+          ctx.ellipse(cx, cy, r * scaleX * 0.86, r * scaleY * 0.86, rot, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+
+        if (pass.recordCells && cells) {
+          cells.push({ cx, cy, r: cr, g: cg, b: cb, lum, char: '', alpha: coreAlpha, radius: r * 0.52 });
+        }
+      }
+    }
+
+    ctx.restore();
+  }
+
+  // Pass 3: Delicate watercolor edge wash accents along major tonal contours
+  const edgeW = Math.min(260, Math.max(100, Math.round(outWidth / (5 - detailLevel * 0.55))));
+  const edgeH = Math.max(60, Math.round((edgeW * outHeight) / outWidth));
+  const eCanvas = document.createElement('canvas');
+  eCanvas.width = edgeW;
+  eCanvas.height = edgeH;
+  const eCtx = eCanvas.getContext('2d', { willReadFrequently: true });
+  eCtx.drawImage(source, 0, 0, edgeW, edgeH);
+  const ePixels = eCtx.getImageData(0, 0, edgeW, edgeH).data;
+  const eLum = new Float32Array(edgeW * edgeH);
+
+  for (let i = 0; i < edgeW * edgeH; i++) {
+    const p = i * 4;
+    const [ar, ag, ab] = adjustPixelColor(
+      ePixels[p],
+      ePixels[p + 1],
+      ePixels[p + 2],
+      contrastFactor,
+      brightnessOffset,
+      satFactor
+    );
+    eLum[i] = 0.2126 * ar + 0.7152 * ag + 0.0722 * ab;
+  }
+
+  const sx = outWidth / edgeW;
+  const sy = outHeight / edgeH;
+  ctx.save();
+  ctx.globalCompositeOperation = bgSpec.light ? 'multiply' : 'source-over';
+  const edgeCutoff = 68 - detailLevel * 7;
+
+  for (let y = 1; y < edgeH - 1; y++) {
+    for (let x = 1; x < edgeW - 1; x++) {
+      const i = y * edgeW + x;
+      const gx =
+        -eLum[i - edgeW - 1] + eLum[i - edgeW + 1] -
+        2 * eLum[i - 1] + 2 * eLum[i + 1] -
+        eLum[i + edgeW - 1] + eLum[i + edgeW + 1];
+      const gy =
+        -eLum[i - edgeW - 1] - 2 * eLum[i - edgeW] - eLum[i - edgeW + 1] +
+        eLum[i + edgeW - 1] + 2 * eLum[i + edgeW] + eLum[i + edgeW + 1];
+      const mag = Math.sqrt(gx * gx + gy * gy) * 0.25;
+      if (mag < edgeCutoff) continue;
+
+      const p = i * 4;
+      const [ar, ag, ab] = adjustPixelColor(
+        ePixels[p],
+        ePixels[p + 1],
+        ePixels[p + 2],
+        contrastFactor,
+        brightnessOffset,
+        satFactor
+      );
+      const [cr, cg, cb] = mapPaletteColor(ar, ag, ab, eLum[i], cfg.colorMode, bgSpec.light);
+      const strength = Math.min(1, (mag - edgeCutoff) / 85);
+      const alpha = strength * Math.min(0.28, 0.14 * pigmentNorm);
+      const rad = Math.max(1.2, (1.4 + softnessNorm * 1.4) * scaleMultiplier);
+
+      ctx.fillStyle = `rgba(${Math.round(cr * 0.76)},${Math.round(cg * 0.76)},${Math.round(cb * 0.76)},${alpha.toFixed(3)})`;
+      ctx.beginPath();
+      ctx.arc((x + 0.5) * sx, (y + 0.5) * sy, rad, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.restore();
+
+  // Pass 4: Cold-press watercolor paper grain texture overlay
+  if (cfg.aquarellePaperGrain) {
+    ctx.save();
+    const pattern = ctx.createPattern(getPaperGrainTile(), 'repeat');
+    if (pattern) {
+      ctx.globalCompositeOperation = bgSpec.light ? 'multiply' : 'overlay';
+      ctx.globalAlpha = bgSpec.light ? 0.85 : 0.35;
+      ctx.fillStyle = pattern;
+      ctx.fillRect(0, 0, outWidth, outHeight);
+    }
+    ctx.restore();
+  }
+
+  const renderMs = Math.max(1, Math.round(performance.now() - startTime));
+  return {
+    baseCanvas,
+    cells,
+    cols: finalCols,
+    rows: finalRows,
+    width: outWidth,
+    height: outHeight,
+    fontSize: Math.round(cfg.cellSize * scaleMultiplier),
+    stepX: basePitch,
+    stepY: basePitch,
+    bgHex: paperHex,
+    renderMs,
+    textOutput: ''
+  };
+}
+
+/**
+ * Shape / Hollow Outline Rendering Mode
+ * Detects main shapes, contours, and silhouettes via color-aware Sobel + Non-Maximum Suppression,
+ * keeping the interior crisp white (#FFFFFF) so outlines pop cleanly.
+ */
+function renderOutline(
+  source,
+  cfg,
+  outWidth,
+  outHeight,
+  scaleMultiplier,
+  contrastFactor,
+  brightnessOffset,
+  satFactor,
+  bgSpec,
+  options,
+  startTime
+) {
+  const baseCanvas = document.createElement('canvas');
+  baseCanvas.width = outWidth;
+  baseCanvas.height = outHeight;
+  const ctx = baseCanvas.getContext('2d');
+
+  // Preserve pure crisp white (#FFFFFF) interior (or warm paper white if explicitly selected)
+  const interiorHex = cfg.background === 'warm' ? '#faf8f4' : '#ffffff';
+  ctx.fillStyle = interiorHex;
+  ctx.fillRect(0, 0, outWidth, outHeight);
+
+  // Optional ultra-light underlay only if user deliberately moves underlay slider above 0
+  if (cfg.underlayOpacity > 0) {
+    ctx.save();
+    ctx.globalAlpha = cfg.underlayOpacity * 0.55;
+    ctx.drawImage(source, 0, 0, outWidth, outHeight);
+    ctx.restore();
+  }
+
+  const detail = Math.max(1, Math.min(5, Math.round(cfg.outlineDetail)));
+  // Working grid scales cleanly with detail level for crisp, noise-free main silhouettes
+  const targetMaxW = 190 + detail * 65; // 255px (bold shapes) -> 515px (fine contours)
+  const w = Math.min(outWidth, targetMaxW);
+  const h = Math.max(60, Math.round((w * outHeight) / outWidth));
+
+  const sCanvas = document.createElement('canvas');
+  sCanvas.width = w;
+  sCanvas.height = h;
+  const sCtx = sCanvas.getContext('2d', { willReadFrequently: true });
+  sCtx.imageSmoothingEnabled = true;
+  sCtx.imageSmoothingQuality = 'high';
+  sCtx.drawImage(source, 0, 0, w, h);
+  const raw = sCtx.getImageData(0, 0, w, h).data;
+
+  const len = w * h;
+  const rawR = new Float32Array(len);
+  const rawG = new Float32Array(len);
+  const rawB = new Float32Array(len);
+
+  for (let i = 0; i < len; i++) {
+    const p = i * 4;
+    const [ar, ag, ab] = adjustPixelColor(
+      raw[p],
+      raw[p + 1],
+      raw[p + 2],
+      contrastFactor,
+      brightnessOffset,
+      satFactor
+    );
+    rawR[i] = ar;
+    rawG[i] = ag;
+    rawB[i] = ab;
+  }
+
+  // Smooth out micro-texture so major shapes and silhouettes stay clean
+  const smoothRadius = detail <= 2 ? 2 : detail <= 4 ? 1 : 0;
+  const { r: fR, g: fG, b: fB } = smoothField(rawR, rawG, rawB, w, h, smoothRadius);
+  const fL = new Float32Array(len);
+  for (let i = 0; i < len; i++) {
+    fL[i] = 0.2126 * fR[i] + 0.7152 * fG[i] + 0.0722 * fB[i];
+  }
+
+  // Color-aware + Luminance Sobel gradient magnitude & angle
+  const mag = new Float32Array(len);
+  const dir = new Uint8Array(len); // 0:0°, 1:45°, 2:90°, 3:135°
+
+  const sobelAt = (arr, i) => {
+    const gx =
+      -arr[i - w - 1] + arr[i - w + 1] -
+      2 * arr[i - 1] + 2 * arr[i + 1] -
+      arr[i + w - 1] + arr[i + w + 1];
+    const gy =
+      -arr[i - w - 1] - 2 * arr[i - w] - arr[i - w + 1] +
+      arr[i + w - 1] + 2 * arr[i + w] + arr[i + w + 1];
+    return [gx, gy, Math.sqrt(gx * gx + gy * gy) * 0.25];
+  };
+
+  for (let y = 1; y < h - 1; y++) {
+    const rowOff = y * w;
+    for (let x = 1; x < w - 1; x++) {
+      const i = rowOff + x;
+      const [gxL, gyL, mL] = sobelAt(fL, i);
+      const [gxR, gyR, mR] = sobelAt(fR, i);
+      const [gxG, gyG, mG] = sobelAt(fG, i);
+      const [gxB, gyB, mB] = sobelAt(fB, i);
+
+      let bestM = mL;
+      let bestGx = gxL;
+      let bestGy = gyL;
+
+      if (mR * 0.88 > bestM) { bestM = mR * 0.88; bestGx = gxR; bestGy = gyR; }
+      if (mG * 0.88 > bestM) { bestM = mG * 0.88; bestGx = gxG; bestGy = gyG; }
+      if (mB * 0.88 > bestM) { bestM = mB * 0.88; bestGx = gxB; bestGy = gyB; }
+
+      mag[i] = bestM;
+
+      // Quantize angle to 4 principal directions for Non-Maximum Suppression
+      let angle = (Math.atan2(bestGy, bestGx) * 180) / Math.PI;
+      if (angle < 0) angle += 180;
+      if (angle < 22.5 || angle >= 157.5) dir[i] = 0;
+      else if (angle < 67.5) dir[i] = 1;
+      else if (angle < 112.5) dir[i] = 2;
+      else dir[i] = 3;
+    }
+  }
+
+  // Non-Maximum Suppression + Crisp Contour Rendering over Pure White Interior
+  const threshold = Math.max(8, cfg.outlineThreshold * 1.18);
+  const softFloor = threshold * 0.62;
+  const sx = outWidth / w;
+  const sy = outHeight / h;
+  const thickness = Math.max(0.8, cfg.outlineThickness * scaleMultiplier);
+  const baseRadius = Math.max(0.75, thickness * 0.56);
+
+  const cells = options.skipCells ? null : [];
+  let contourCount = 0;
+
+  for (let y = 1; y < h - 1; y++) {
+    const rowOff = y * w;
+    for (let x = 1; x < w - 1; x++) {
+      const i = rowOff + x;
+      const m = mag[i];
+      if (m < softFloor) continue;
+
+      // Check local ridge maximum along gradient normal
+      let n1 = 0;
+      let n2 = 0;
+      const d = dir[i];
+      if (d === 0) {
+        n1 = mag[i - 1];
+        n2 = mag[i + 1];
+      } else if (d === 1) {
+        n1 = mag[i - w + 1];
+        n2 = mag[i + w - 1];
+      } else if (d === 2) {
+        n1 = mag[i - w];
+        n2 = mag[i + w];
+      } else {
+        n1 = mag[i - w - 1];
+        n2 = mag[i + w + 1];
+      }
+
+      if (m < n1 || m < n2) continue;
+
+      // Hysteresis: accept weak edge only if connected to a strong ridge neighbor
+      if (m < threshold) {
+        const hasStrongNeighbor =
+          mag[i - w - 1] >= threshold || mag[i - w] >= threshold || mag[i - w + 1] >= threshold ||
+          mag[i - 1] >= threshold || mag[i + 1] >= threshold ||
+          mag[i + w - 1] >= threshold || mag[i + w] >= threshold || mag[i + w + 1] >= threshold;
+        if (!hasStrongNeighbor) continue;
+      }
+
+      contourCount++;
+      const strength = Math.min(1, (m - softFloor) / Math.max(12, threshold * 0.95));
+      const cx = (x + 0.5) * sx;
+      const cy = (y + 0.5) * sy;
+
+      let cr = 15;
+      let cg = 23;
+      let cb = 42;
+
+      if (cfg.outlineInkStyle === 'ink') {
+        cr = 15;
+        cg = 23;
+        cb = 42;
+      } else if (cfg.outlineInkStyle === 'palette') {
+        const [pr, pg, pb] = mapPaletteColor(fR[i], fG[i], fB[i], fL[i], cfg.colorMode, true);
+        // Deepen gently so light palette colors stay razor-sharp on #FFFFFF
+        cr = Math.round(pr * 0.72);
+        cg = Math.round(pg * 0.72);
+        cb = Math.round(pb * 0.72);
+      } else {
+        // 'rgb' — Real Subject Colors deepened slightly for high-contrast clarity on pure white
+        const lum = fL[i];
+        const darken = lum > 170 ? 0.58 : lum > 120 ? 0.72 : 0.88;
+        cr = Math.round(clamp255(fR[i] * darken));
+        cg = Math.round(clamp255(fG[i] * darken));
+        cb = Math.round(clamp255(fB[i] * darken));
+      }
+
+      const alpha = Math.min(1, 0.35 + strength * 0.65);
+      const rad = baseRadius * (0.72 + strength * 0.42);
+
+      ctx.fillStyle = `rgba(${cr},${cg},${cb},${alpha.toFixed(3)})`;
+      ctx.beginPath();
+      ctx.arc(cx, cy, rad, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Subsample cells array lightly for fast 60fps spotlight interaction
+      if (cells && (contourCount % 2 === 0 || detail <= 2)) {
+        cells.push({ cx, cy, r: cr, g: cg, b: cb, lum: fL[i], char: '', alpha, radius: rad });
+      }
+    }
+  }
+
+  const renderMs = Math.max(1, Math.round(performance.now() - startTime));
+  return {
+    baseCanvas,
+    cells,
+    cols: w,
+    rows: h,
+    width: outWidth,
+    height: outHeight,
+    fontSize: Math.round(thickness * 4),
+    stepX: sx,
+    stepY: sy,
+    bgHex: interiorHex,
+    renderMs,
+    textOutput: ''
+  };
 }
 
 /**
@@ -178,9 +809,48 @@ export function renderArtwork(source, config, options = {}) {
   outWidth = Math.max(240, Math.round(outWidth * scaleMultiplier));
   outHeight = Math.max(180, Math.round(outHeight * scaleMultiplier));
 
+  const bgSpec = CANVAS_BACKGROUNDS[cfg.background] || CANVAS_BACKGROUNDS.obsidian;
+  const cVal = cfg.contrast * 2.55;
+  const contrastFactor = (259 * (cVal + 255)) / (255 * (259 - cVal));
+  const brightnessOffset = cfg.brightness * 2.1;
+  const satFactor = cfg.saturation / 100;
+
+  // Dispatch to specialized painterly / contour pipelines
+  if (cfg.mode === 'aquarelle') {
+    return renderAquarelle(
+      source,
+      cfg,
+      outWidth,
+      outHeight,
+      scaleMultiplier,
+      contrastFactor,
+      brightnessOffset,
+      satFactor,
+      bgSpec,
+      options,
+      startTime
+    );
+  }
+
+  if (cfg.mode === 'outline') {
+    return renderOutline(
+      source,
+      cfg,
+      outWidth,
+      outHeight,
+      scaleMultiplier,
+      contrastFactor,
+      brightnessOffset,
+      satFactor,
+      bgSpec,
+      options,
+      startTime
+    );
+  }
+
+  // Matrix Modes: Binary, ASCII, and Dots / Halftone
   const cellSize = Math.max(4, Math.round(cfg.cellSize * scaleMultiplier));
   const stepX = Math.max(4, Math.round(cellSize * cfg.spacing));
-  // Monospace characters are naturally taller than wide; keep dots square
   const stepY =
     cfg.mode === 'dots'
       ? stepX
@@ -189,7 +859,6 @@ export function renderArtwork(source, config, options = {}) {
   const cols = Math.max(8, Math.floor(outWidth / stepX));
   const rows = Math.max(6, Math.floor(outHeight / stepY));
 
-  // Sample source into a tiny grid canvas matching cols x rows for fast block averaging
   const sampleCanvas = document.createElement('canvas');
   sampleCanvas.width = cols;
   sampleCanvas.height = rows;
@@ -199,29 +868,20 @@ export function renderArtwork(source, config, options = {}) {
   sampleCtx.drawImage(source, 0, 0, cols, rows);
   const pixelData = sampleCtx.getImageData(0, 0, cols, rows).data;
 
-  // Base output canvas
   const baseCanvas = document.createElement('canvas');
   baseCanvas.width = outWidth;
   baseCanvas.height = outHeight;
   const ctx = baseCanvas.getContext('2d');
 
-  const bgSpec = CANVAS_BACKGROUNDS[cfg.background] || CANVAS_BACKGROUNDS.obsidian;
   ctx.fillStyle = bgSpec.hex;
   ctx.fillRect(0, 0, outWidth, outHeight);
 
-  // Optional dimmed original underlay
   if (cfg.underlayOpacity > 0) {
     ctx.save();
     ctx.globalAlpha = cfg.underlayOpacity;
     ctx.drawImage(source, 0, 0, outWidth, outHeight);
     ctx.restore();
   }
-
-  // Contrast formula: classic -100..100 mapping
-  const cVal = cfg.contrast * 2.55;
-  const contrastFactor = (259 * (cVal + 255)) / (255 * (259 - cVal));
-  const brightnessOffset = cfg.brightness * 2.1;
-  const satFactor = cfg.saturation / 100;
 
   const rampStr = (ASCII_RAMPS[cfg.asciiRamp] || ASCII_RAMPS.classic).chars;
   const rampLen = rampStr.length;
@@ -264,7 +924,6 @@ export function renderArtwork(source, config, options = {}) {
         satFactor
       );
 
-      // Rec. 709 relative luminance
       const lum = 0.2126 * ar + 0.7152 * ag + 0.0722 * ab;
       const [cr, cg, cb] = mapPaletteColor(ar, ag, ab, lum, cfg.colorMode, bgSpec.light);
 
@@ -280,7 +939,6 @@ export function renderArtwork(source, config, options = {}) {
           bit = bit === '1' ? '0' : '1';
         }
 
-        // Subtle opacity nuance so dark 0s recede slightly while bright 1s pop
         const bitAlpha = bit === '1' ? 0.98 : bgSpec.light ? 0.42 : 0.36;
         ctx.fillStyle = `rgba(${cr},${cg},${cb},${bitAlpha.toFixed(2)})`;
         ctx.fillText(bit, cx, cy);
@@ -290,7 +948,6 @@ export function renderArtwork(source, config, options = {}) {
           cells.push({ cx, cy, r: cr, g: cg, b: cb, lum, char: bit, alpha: bitAlpha, radius: 0 });
         }
       } else if (cfg.mode === 'ascii') {
-        // On dark bg, brighter pixels get denser glyphs (@, #); on light bg or inverted, darker pixels do
         let norm = lum / 255;
         const shouldInvert = bgSpec.light ? !cfg.invert : cfg.invert;
         if (!shouldInvert) {
@@ -324,7 +981,6 @@ export function renderArtwork(source, config, options = {}) {
           radius = maxRadius * (0.12 + 0.88 * Math.pow(factor, 0.85));
           dotAlpha = 0.3 + 0.7 * factor;
         } else {
-          // opacity + size harmonic
           const factor = cfg.invert ? 1 - normLum : normLum;
           radius = maxRadius * (0.28 + 0.72 * factor);
           dotAlpha = 0.12 + 0.88 * Math.pow(factor, 1.15);
@@ -388,7 +1044,6 @@ export function compositeWithSpotlight(displayCanvas, renderResult, sourceImage,
   const radius = config.spotlightRadius || 115;
 
   if (config.spotlightMode === 'reveal' && sourceImage) {
-    // Feathered radial lens revealing the crisp original photograph
     ctx.save();
     ctx.beginPath();
     ctx.arc(x, y, radius, 0, Math.PI * 2);
@@ -396,7 +1051,6 @@ export function compositeWithSpotlight(displayCanvas, renderResult, sourceImage,
     ctx.drawImage(sourceImage, 0, 0, displayCanvas.width, displayCanvas.height);
     ctx.restore();
 
-    // Subtle lens ring
     ctx.save();
     const ringGrad = ctx.createRadialGradient(x, y, radius * 0.72, x, y, radius);
     ringGrad.addColorStop(0, 'rgba(56, 189, 248, 0)');
@@ -415,11 +1069,17 @@ export function compositeWithSpotlight(displayCanvas, renderResult, sourceImage,
 
   if (config.spotlightMode === 'glow') {
     ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalCompositeOperation = config.mode === 'outline' ? 'multiply' : 'lighter';
     const glow = ctx.createRadialGradient(x, y, 4, x, y, radius * 1.25);
-    glow.addColorStop(0, 'rgba(56, 189, 248, 0.32)');
-    glow.addColorStop(0.48, 'rgba(167, 139, 250, 0.16)');
-    glow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    if (config.mode === 'outline') {
+      glow.addColorStop(0, 'rgba(56, 189, 248, 0.2)');
+      glow.addColorStop(0.55, 'rgba(167, 139, 250, 0.1)');
+      glow.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    } else {
+      glow.addColorStop(0, 'rgba(56, 189, 248, 0.32)');
+      glow.addColorStop(0.48, 'rgba(167, 139, 250, 0.16)');
+      glow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    }
     ctx.fillStyle = glow;
     ctx.beginPath();
     ctx.arc(x, y, radius * 1.25, 0, Math.PI * 2);
@@ -428,11 +1088,57 @@ export function compositeWithSpotlight(displayCanvas, renderResult, sourceImage,
     return;
   }
 
-  // Default: 'magnify' — illuminate & dynamically scale/repel glyphs or dots inside radius
+  // 'magnify' mode across all 5 rendering engines
   if (!renderResult.cells) return;
   const r2 = radius * radius;
+  const cells = renderResult.cells;
 
-  // Mask out base cells softly inside the spotlight core so magnified ones look razor-sharp
+  if (config.mode === 'aquarelle') {
+    // Wet watercolor bloom shimmer inside spotlight
+    ctx.save();
+    for (let i = 0; i < cells.length; i++) {
+      const cell = cells[i];
+      const dx = cell.cx - x;
+      const dy = cell.cy - y;
+      const dist2 = dx * dx + dy * dy;
+      if (dist2 > r2) continue;
+      const t = 1 - Math.sqrt(dist2) / radius;
+      const smooth = t * t * (3 - 2 * t);
+      const bloomR = Math.max(4, cell.radius * (1 + smooth * 0.65));
+      const grad = ctx.createRadialGradient(cell.cx, cell.cy, bloomR * 0.1, cell.cx, cell.cy, bloomR);
+      grad.addColorStop(0, `rgba(${cell.r},${cell.g},${cell.b},${(smooth * 0.34).toFixed(3)})`);
+      grad.addColorStop(1, `rgba(${cell.r},${cell.g},${cell.b},0)`);
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(cell.cx, cell.cy, bloomR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+    return;
+  }
+
+  if (config.mode === 'outline') {
+    // Crisp contour thickening & subtle highlight inside spotlight over pure white interior
+    ctx.save();
+    for (let i = 0; i < cells.length; i++) {
+      const cell = cells[i];
+      const dx = cell.cx - x;
+      const dy = cell.cy - y;
+      const dist2 = dx * dx + dy * dy;
+      if (dist2 > r2) continue;
+      const t = 1 - Math.sqrt(dist2) / radius;
+      const smooth = t * t * (3 - 2 * t);
+      const scaledR = Math.max(1.1, cell.radius * (1 + smooth * 0.95));
+      ctx.fillStyle = `rgba(${cell.r},${cell.g},${cell.b},${Math.min(1, cell.alpha + smooth * 0.35).toFixed(3)})`;
+      ctx.beginPath();
+      ctx.arc(cell.cx, cell.cy, scaledR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+    return;
+  }
+
+  // Binary, ASCII, Dots: Mask core softly and draw magnified luminous cells
   ctx.save();
   const clearGrad = ctx.createRadialGradient(x, y, radius * 0.15, x, y, radius);
   clearGrad.addColorStop(0, renderResult.bgHex);
@@ -443,7 +1149,6 @@ export function compositeWithSpotlight(displayCanvas, renderResult, sourceImage,
   ctx.arc(x, y, radius, 0, Math.PI * 2);
   ctx.fill();
 
-  // Subtle radial glow halo
   const halo = ctx.createRadialGradient(x, y, 0, x, y, radius);
   halo.addColorStop(0, 'rgba(56, 189, 248, 0.14)');
   halo.addColorStop(1, 'rgba(56, 189, 248, 0)');
@@ -455,7 +1160,6 @@ export function compositeWithSpotlight(displayCanvas, renderResult, sourceImage,
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
-  const cells = renderResult.cells;
   for (let i = 0; i < cells.length; i++) {
     const cell = cells[i];
     const dx = cell.cx - x;
@@ -464,17 +1168,15 @@ export function compositeWithSpotlight(displayCanvas, renderResult, sourceImage,
     if (dist2 > r2) continue;
 
     const dist = Math.sqrt(dist2);
-    const t = 1 - dist / radius; // 1 at center, 0 at rim
+    const t = 1 - dist / radius;
     const smooth = t * t * (3 - 2 * t);
 
-    // Subtle radial magnification displacement
     const push = smooth * 7;
     const nx = dist > 0.001 ? dx / dist : 0;
     const ny = dist > 0.001 ? dy / dist : 0;
     const px = cell.cx + nx * push;
     const py = cell.cy + ny * push;
 
-    // Brighten cell RGB gently toward highlight
     const boost = Math.round(smooth * 68);
     const br = clamp255(cell.r + boost);
     const bg = clamp255(cell.g + boost);

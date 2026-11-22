@@ -104,9 +104,11 @@
           <li><a href="#binary-art">2. How Binary (0/1) Art Works</a></li>
           <li><a href="#ascii-rendering">3. ASCII Optical Density &amp; Ramps</a></li>
           <li><a href="#halftone-dots">4. Halftone Dots &amp; Screening Grids</a></li>
-          <li><a href="#contrast-resolution">5. Contrast, Resolution &amp; Tuning</a></li>
-          <li><a href="#genre-table">6. Recommended Settings by Subject</a></li>
-          <li><a href="#guides-faq">7. Technical FAQ</a></li>
+          <li><a href="#aquarelle-watercolor">5. Aquarelle Watercolor Synthesis</a></li>
+          <li><a href="#hollow-outline">6. Shape &amp; Hollow Outline Contours</a></li>
+          <li><a href="#contrast-resolution">7. Contrast, Resolution &amp; Tuning</a></li>
+          <li><a href="#genre-table">8. Recommended Settings by Subject</a></li>
+          <li><a href="#guides-faq">9. Technical FAQ</a></li>
         </ul>
         <div style="margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--border);">
           <a class="btn btn-primary btn-sm" style="width:100%;" href="/#studio">Try in Live Studio</a>
@@ -284,8 +286,76 @@
           </ol>
         </section>
 
+        <section id="aquarelle-watercolor">
+          <h2>5. How Digital Aquarelle (Watercolor) Synthesis Works</h2>
+          <p>
+            Unlike opaque oil or acrylic paints that sit on top of a canvas, traditional <strong>aquarelle</strong>
+            (watercolor) relies on translucent pigment suspended in water soaking into textured cotton paper. Light
+            passes through stacked color glazes, reflects off the bright paper fibers underneath, and returns to the
+            viewer's eye—a subtractive optical behavior called <strong>multiplicative blending</strong>.
+          </p>
+          <p>
+            ChromaGlyph Studio recreates this painterly behavior on HTML5 Canvas in four deterministic stages:
+          </p>
+          <ol>
+            <li>
+              <strong>Wet-on-Wet Atmospheric Under-Wash:</strong> A soft, low-frequency color glaze spreads the
+              photograph's broad chromatic fields into the paper using <code>multiply</code> compositing so overlapping
+              warm and cool tones naturally deepen rather than turn muddy gray.
+            </li>
+            <li>
+              <strong>Layered Irregular Pigment Blobs:</strong> Three progressive brush passes—from wide transparent
+              washes down to mid-detail strokes controlled by <em>Wash Softness</em> and <em>Brush Detail Scale</em>—lay
+              feathered radial-gradient ellipses using the photograph's true RGB pigments while letting near-white
+              highlights stay bare paper.
+            </li>
+            <li>
+              <strong>Capillary Wet-Edge Pooling:</strong> Real watercolor pools slightly darker pigment along the
+              drying perimeter of a water drop. ChromaGlyph adds subtle darkened translucent rim rings and gentle
+              luminance-gradient accents so petals, clouds, and portraits keep painterly form without harsh digital lines.
+            </li>
+            <li>
+              <strong>Cold-Press Paper Tooth:</strong> A procedural micro-fiber grain overlay emulates 300gsm cold-press
+              cotton paper so flat gradients carry tactile physical warmth.
+            </li>
+          </ol>
+        </section>
+
+        <section id="hollow-outline">
+          <h2>6. Shape Detection &amp; Hollow White-Interior Outlines</h2>
+          <p>
+            Clean line-art extraction requires solving a classic computer vision challenge: separating <em>primary
+            structural shapes and silhouettes</em> from high-frequency photographic texture (such as concrete pores,
+            water sparkles, or camera grain) while keeping interior surfaces completely crisp and white (<code>#FFFFFF</code>).
+          </p>
+          <ul>
+            <li>
+              <strong>Detail-Controlled Separable Smoothing:</strong> Before detecting edges, the engine applies a fast
+              horizontal-and-vertical smoothing kernel scaled inversely by <em>Contour Detail Level</em>. Lower detail
+              levels (<code>Level 1–2</code>) melt away surface noise to isolate bold graphic silhouettes; higher levels
+              (<code>Level 4–5</code>) retain architectural mullions and fine botanical veins.
+            </li>
+            <li>
+              <strong>Color-Aware + Rec. 709 Sobel Gradients:</strong> Standard grayscale edge detectors miss contours
+              where two adjacent objects share the same brightness (for example, vivid cyan beside vivid magenta).
+              ChromaGlyph computes Sobel derivatives across luminance <em>and</em> individual R, G, and B channels,
+              taking the strongest local boundary.
+            </li>
+            <li>
+              <strong>8-Directional Non-Maximum Suppression &amp; Hysteresis:</strong> Thick blurred edge bands are
+              thinned down to single-pixel ridge skeletons along the gradient normal, then filtered with dual-threshold
+              hysteresis so connected curves remain unbroken over a pure <code>#FFFFFF</code> interior.
+            </li>
+            <li>
+              <strong>Deepened Real-Color or Studio Ink Strokes:</strong> Outlines can be drawn in crisp Studio Black
+              Ink (<code>#0F172A</code>) for minimalist architectural drawings, or in deepened Real Subject RGB colors
+              so pale pastel highlights remain legible against pure white paper.
+            </li>
+          </ul>
+        </section>
+
         <section id="contrast-resolution">
-          <h2>5. Practical Guide: Best Image Contrast &amp; Resolution</h2>
+          <h2>7. Practical Guide: Best Image Contrast &amp; Resolution</h2>
           <p>
             The most common reason a first ASCII or Binary conversion looks muddy has nothing to do with the character
             set—it comes from low tonal separation in the source photograph. Follow these four production rules to elevate
@@ -316,7 +386,7 @@
         </section>
 
         <section id="genre-table">
-          <h2>6. Recommended Starting Settings by Image Genre</h2>
+          <h2>8. Recommended Starting Settings by Image Genre</h2>
           <p>
             Use this quick-reference matrix as a starting point when uploading your own photography into ChromaGlyph Studio:
           </p>
@@ -327,7 +397,7 @@
                 <tr>
                   <th>Subject Type</th>
                   <th>Best Mode</th>
-                  <th>Cell Size</th>
+                  <th>Cell / Scale</th>
                   <th>Contrast / Sat</th>
                   <th>Key Setting</th>
                 </tr>
@@ -342,31 +412,31 @@
                 </tr>
                 <tr>
                   <td>Landscapes &amp; Skies</td>
-                  <td>ASCII (Classic / Extended)</td>
-                  <td>7px – 9px</td>
-                  <td>+18% / 120%</td>
-                  <td>True RGB, 0.95×–1.0× spacing</td>
+                  <td>ASCII or Aquarelle</td>
+                  <td>7px – 9px / Soft 75%</td>
+                  <td>+18% / 125%</td>
+                  <td>True RGB, Warm Cream or Obsidian</td>
                 </tr>
                 <tr>
                   <td>Architecture &amp; Shadows</td>
-                  <td>Dots (Print) or Block ASCII</td>
-                  <td>10px – 12px</td>
-                  <td>+28% / 110%</td>
-                  <td>Size by Darkness + Gallery Paper</td>
+                  <td>Hollow Outline or Print Dots</td>
+                  <td>Detail 4 / 2.2px ink</td>
+                  <td>+30% / 110%</td>
+                  <td>#FFFFFF Interior, Studio Black Ink</td>
                 </tr>
                 <tr>
-                  <td>Macro Flowers / Nature</td>
-                  <td>Hex Halftone or Extended ASCII</td>
-                  <td>8px – 10px</td>
-                  <td>+16% / 128%</td>
-                  <td>Hexagonal Grid ON, Vibrant RGB</td>
+                  <td>Macro Flowers &amp; Nature</td>
+                  <td>Aquarelle or Hex Halftone</td>
+                  <td>Detail 4 / Soft 68%</td>
+                  <td>+15% / 132%</td>
+                  <td>Cold-Press Paper Grain ON, True RGB</td>
                 </tr>
                 <tr>
-                  <td>Logos &amp; Bold Silhouettes</td>
-                  <td>Binary 0/1 (Hard Cutoff)</td>
-                  <td>10px – 14px</td>
-                  <td>+35% / 125%</td>
-                  <td>Bayer Dither OFF, Threshold 115–130</td>
+                  <td>Wildlife &amp; Bold Silhouettes</td>
+                  <td>Hollow Outline or Binary 0/1</td>
+                  <td>Detail 3 / 2.4px ink</td>
+                  <td>+28% / 130%</td>
+                  <td>Real Subject Colors on #FFFFFF Interior</td>
                 </tr>
               </tbody>
             </table>
@@ -374,7 +444,7 @@
         </section>
 
         <section id="guides-faq">
-          <h2>7. Extended Technical FAQ</h2>
+          <h2>9. Extended Technical FAQ</h2>
           <div class="faq-list">
             <details class="faq-item">
               <summary>Does the mouse hover spotlight appear in my downloaded PNG?</summary>

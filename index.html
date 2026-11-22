@@ -3,15 +3,15 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ChromaGlyph Studio — Color-True Binary, ASCII &amp; Halftone Image-to-Art Generator</title>
+  <title>ChromaGlyph Studio — Binary, ASCII, Halftone, Aquarelle &amp; Outline Art Generator</title>
   <meta
     name="description"
-    content="Transform photographs into color-true Binary (0/1), ASCII character art, and Halftone dot illustrations right in your browser. Interactive canvas spotlight, real RGB mapping, high-res PNG export, curated gallery, and graphics guides."
+    content="Transform photographs into color-true Binary (0/1), ASCII character art, Halftone dots, layered Aquarelle watercolor washes, and crisp white-interior Hollow Outlines right in your browser with 2x HiDPI PNG export."
   />
-  <meta property="og:title" content="ChromaGlyph Studio — Color-True Binary, ASCII &amp; Halftone Art Studio" />
+  <meta property="og:title" content="ChromaGlyph Studio — Multi-Mode Visual Art Studio" />
   <meta
     property="og:description"
-    content="Interactive browser-native image-to-art generator with real RGB colors, Binary 0/1 dithering, dense ASCII ramps, and Halftone dot screening."
+    content="Interactive browser-native image-to-art studio with Binary 0/1, ASCII typography, Halftone dots, Aquarelle watercolor washes, and Hollow Outline contours."
   />
   <meta property="og:type" content="website" />
   <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg" />
@@ -98,11 +98,12 @@
         <div class="hero-copy">
           <p class="eyebrow">HTML5 Canvas 2D · True RGB Engine</p>
           <h1 class="hero-title">
-            Turn Photos Into <span class="gradient-text">Binary, ASCII &amp; Halftone</span> Art
+            Turn Photos Into <span class="gradient-text">Binary, ASCII, Halftone, Aquarelle &amp; Outline</span> Art
           </h1>
           <p class="hero-lead">
             Upload any photograph or explore curated studio samples to render real-color 0/1 bitstreams,
-            optical-density ASCII typography, and offset-style halftone dots—processed 100% locally in your browser.
+            optical-density ASCII typography, offset halftone dots, soft watercolor washes, and crisp white-interior
+            hollow silhouettes—processed 100% locally in your browser.
           </p>
         </div>
 
@@ -193,7 +194,7 @@
 
             <!-- Right: Inspector Control Panel -->
             <aside class="inspector-column" aria-label="Rendering controls">
-              <!-- Three Main Rendering Modes -->
+              <!-- Five Main Rendering Modes -->
               <div class="mode-tabs" role="tablist" aria-label="Rendering mode">
                 <button
                   type="button"
@@ -224,6 +225,26 @@
                 >
                   <span class="mode-glyph">●○·</span>
                   <span>Dots</span>
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  class="mode-tab"
+                  data-mode="aquarelle"
+                  aria-selected="false"
+                >
+                  <span class="mode-glyph">◐~</span>
+                  <span>Aquarelle</span>
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  class="mode-tab"
+                  data-mode="outline"
+                  aria-selected="false"
+                >
+                  <span class="mode-glyph">▢</span>
+                  <span>Outline</span>
                 </button>
               </div>
 
@@ -318,6 +339,83 @@
                       <span class="switch-slider"></span>
                     </span>
                   </label>
+                </div>
+
+                <!-- Mode-Specific Controls: Aquarelle (Watercolor) -->
+                <div id="panel-aquarelle-options" class="control-group hidden-panel">
+                  <h2 class="control-group-title">Aquarelle / Watercolor</h2>
+
+                  <div class="control-row">
+                    <div class="control-label-row">
+                      <label for="ctrl-aquarelle-softness">Wash Softness &amp; Bleed</label>
+                      <output id="val-aquarelle-softness" class="control-value">62%</output>
+                    </div>
+                    <input id="ctrl-aquarelle-softness" type="range" min="20" max="100" step="2" value="62" />
+                  </div>
+
+                  <div class="control-row">
+                    <div class="control-label-row">
+                      <label for="ctrl-aquarelle-pigment">Pigment Intensity</label>
+                      <output id="val-aquarelle-pigment" class="control-value">92%</output>
+                    </div>
+                    <input id="ctrl-aquarelle-pigment" type="range" min="35" max="145" step="2" value="92" />
+                  </div>
+
+                  <div class="control-row">
+                    <div class="control-label-row">
+                      <label for="ctrl-aquarelle-detail">Brush Detail Scale</label>
+                      <output id="val-aquarelle-detail" class="control-value">Level 3</output>
+                    </div>
+                    <input id="ctrl-aquarelle-detail" type="range" min="1" max="5" step="1" value="3" />
+                  </div>
+
+                  <label class="toggle-row">
+                    <span>Cold-Press Paper Grain</span>
+                    <span class="switch">
+                      <input id="ctrl-aquarelle-grain" type="checkbox" checked />
+                      <span class="switch-slider"></span>
+                    </span>
+                  </label>
+                </div>
+
+                <!-- Mode-Specific Controls: Shape / Hollow Outline -->
+                <div id="panel-outline-options" class="control-group hidden-panel">
+                  <h2 class="control-group-title">Shape / Hollow Outline (#FFFFFF)</h2>
+
+                  <div class="control-row">
+                    <div class="control-label-row">
+                      <label for="ctrl-outline-threshold">Edge / Shape Threshold</label>
+                      <output id="val-outline-threshold" class="control-value">34</output>
+                    </div>
+                    <input id="ctrl-outline-threshold" type="range" min="10" max="88" step="1" value="34" />
+                  </div>
+
+                  <div class="control-row">
+                    <div class="control-label-row">
+                      <label for="ctrl-outline-thickness">Outline Thickness</label>
+                      <output id="val-outline-thickness" class="control-value">2.2px</output>
+                    </div>
+                    <input id="ctrl-outline-thickness" type="range" min="1" max="6" step="0.2" value="2.2" />
+                  </div>
+
+                  <div class="control-row">
+                    <div class="control-label-row">
+                      <label for="ctrl-outline-detail">Contour Detail Level</label>
+                      <output id="val-outline-detail" class="control-value">Level 3</output>
+                    </div>
+                    <input id="ctrl-outline-detail" type="range" min="1" max="5" step="1" value="3" />
+                  </div>
+
+                  <div class="control-row">
+                    <div class="control-label-row">
+                      <label for="ctrl-outline-ink">Outline Ink Style</label>
+                    </div>
+                    <select id="ctrl-outline-ink" class="select-input">
+                      <option value="rgb">Real Subject Colors (Deepened)</option>
+                      <option value="ink">Studio Black Ink (#0F172A)</option>
+                      <option value="palette">Active Color Palette</option>
+                    </select>
+                  </div>
                 </div>
 
                 <!-- Color & Tone Adjustments -->
@@ -455,11 +553,11 @@
             <p class="eyebrow">Curated Pre-Generated Recipes</p>
             <h2 id="featured-gallery-heading">Studio Gallery &amp; Technical Breakdowns</h2>
             <p class="section-subtitle">
-              Explore real-color artworks generated across Binary, ASCII, and Halftone modes. Each study documents
-              its exact grid spacing, threshold, and tonal adjustments—hover any piece for a live spotlight or open it directly in the Studio.
+              Explore real-color artworks generated across Binary, ASCII, Halftone, Aquarelle, and Hollow Outline modes.
+              Each study documents its exact settings—hover any piece for a live spotlight or open it directly in the Studio.
             </p>
           </div>
-          <a class="btn btn-secondary" href="/gallery">View All 9 Gallery Studies &rarr;</a>
+          <a class="btn btn-secondary" href="/gallery">View All 13 Gallery Studies &rarr;</a>
         </div>
 
         <div id="featured-gallery-grid" class="gallery-grid">
@@ -526,65 +624,65 @@
             </div>
           </article>
 
-          <article class="gallery-card" data-mode="ascii" data-gallery-id="botanical-extended-ascii">
-            <div class="gallery-visual" role="button" tabindex="0" aria-label="Inspect Tropical Petal Micro-Glyphs artwork">
-              <canvas width="640" height="480" aria-label="Tropical Petal Micro-Glyphs rendered in ASCII Art mode"></canvas>
+          <article class="gallery-card" data-mode="aquarelle" data-gallery-id="botanical-aquarelle-wash">
+            <div class="gallery-visual" role="button" tabindex="0" aria-label="Inspect Tropical Petal Aquarelle Wash artwork">
+              <canvas width="640" height="480" aria-label="Tropical Petal Aquarelle Wash rendered in Aquarelle mode"></canvas>
               <div class="gallery-visual-overlay">
                 <span class="btn btn-sm btn-secondary">Inspect Artwork</span>
               </div>
             </div>
             <div class="gallery-card-body">
               <div class="gallery-card-head">
-                <h3 class="gallery-card-title">Tropical Petal Micro-Glyphs</h3>
-                <span class="badge badge-ascii">ASCII Art</span>
+                <h3 class="gallery-card-title">Tropical Petal Aquarelle Wash</h3>
+                <span class="badge badge-aquarelle">Aquarelle</span>
               </div>
-              <div class="tech-specs" aria-label="Technical settings used"><span class="spec-chip">Grid: <strong>8px · 0.95x</strong></span><span class="spec-chip">Ramp: <strong>Extended 70ch</strong></span><span class="spec-chip">Contrast: <strong>+16%</strong></span><span class="spec-chip">Palette: <strong>Vibrant RGB</strong></span><span class="spec-chip">Backdrop: <strong>Pure Black</strong></span></div>
-              <p class="gallery-card-desc">Macro botanical photography benefits from tighter 8px cells and the extended 70-character optical density ramp. Fine shading transitions across overlapping coral, magenta, and turquoise petals stay legible without over-compressing delicate highlights.</p>
+              <div class="tech-specs" aria-label="Technical settings used"><span class="spec-chip">Softness: <strong>68% Bleed</strong></span><span class="spec-chip">Pigment: <strong>96%</strong></span><span class="spec-chip">Detail: <strong>Level 4</strong></span><span class="spec-chip">Paper: <strong>Cold-Press</strong></span><span class="spec-chip">Color: <strong>True RGB</strong></span></div>
+              <p class="gallery-card-desc">Layered translucent radial washes in Multiply blend mode let coral, hibiscus magenta, and teal pigments bloom organically across warm cold-press paper. Setting Detail to Level 4 preserves delicate capillary edge rings along overlapping petals without losing painterly softness.</p>
               <div class="gallery-card-actions">
                 <button type="button" class="btn btn-sm btn-ghost js-inspect-btn">Inspect Details</button>
-                <a class="btn btn-sm btn-primary" href="/?preset=botanical-extended-ascii#studio">Open in Studio</a>
+                <a class="btn btn-sm btn-primary" href="/?preset=botanical-aquarelle-wash#studio">Open in Studio</a>
               </div>
             </div>
           </article>
 
-          <article class="gallery-card" data-mode="dots" data-gallery-id="brutalist-paper-halftone">
-            <div class="gallery-visual" role="button" tabindex="0" aria-label="Inspect Offset Print Brutalist Study artwork">
-              <canvas width="640" height="480" aria-label="Offset Print Brutalist Study rendered in Dots / Halftone mode"></canvas>
+          <article class="gallery-card" data-mode="outline" data-gallery-id="koi-hollow-contour">
+            <div class="gallery-visual" role="button" tabindex="0" aria-label="Inspect Crimson Koi Hollow Silhouette artwork">
+              <canvas width="640" height="480" aria-label="Crimson Koi Hollow Silhouette rendered in Hollow Outline mode"></canvas>
               <div class="gallery-visual-overlay">
                 <span class="btn btn-sm btn-secondary">Inspect Artwork</span>
               </div>
             </div>
             <div class="gallery-card-body">
               <div class="gallery-card-head">
-                <h3 class="gallery-card-title">Offset Print Brutalist Study</h3>
-                <span class="badge badge-dots">Dots / Halftone</span>
+                <h3 class="gallery-card-title">Crimson Koi Hollow Silhouette</h3>
+                <span class="badge badge-outline">Hollow Outline</span>
               </div>
-              <div class="tech-specs" aria-label="Technical settings used"><span class="spec-chip">Grid: <strong>11px Hex</strong></span><span class="spec-chip">Response: <strong>Size by Darkness</strong></span><span class="spec-chip">Canvas: <strong>Gallery Paper</strong></span><span class="spec-chip">Contrast: <strong>+30%</strong></span><span class="spec-chip">Color: <strong>True RGB</strong></span></div>
-              <p class="gallery-card-desc">Modeled after mid-century architectural lithographs, this recipe switches to a light Gallery Paper canvas and reverses dot sizing to &quot;Size by Darkness.&quot; Deep concrete shadows swell into bold ink circles while sunlit ledges open up into airy white space.</p>
+              <div class="tech-specs" aria-label="Technical settings used"><span class="spec-chip">Interior: <strong>#FFFFFF</strong></span><span class="spec-chip">Threshold: <strong>30</strong></span><span class="spec-chip">Thickness: <strong>2.4px</strong></span><span class="spec-chip">Detail: <strong>Level 3</strong></span><span class="spec-chip">Ink: <strong>Real RGB</strong></span></div>
+              <p class="gallery-card-desc">Color-aware Sobel edge extraction with non-maximum ridge thinning traces the graceful S-curve of the Koi and surrounding water ripples while keeping every interior shape crisp pure white (#FFFFFF). Deepened real-RGB outlines preserve the vermilion and indigo palette cleanly against bright paper.</p>
               <div class="gallery-card-actions">
                 <button type="button" class="btn btn-sm btn-ghost js-inspect-btn">Inspect Details</button>
-                <a class="btn btn-sm btn-primary" href="/?preset=brutalist-paper-halftone#studio">Open in Studio</a>
+                <a class="btn btn-sm btn-primary" href="/?preset=koi-hollow-contour#studio">Open in Studio</a>
               </div>
             </div>
           </article>
 
-          <article class="gallery-card" data-mode="binary" data-gallery-id="astronaut-binary-visor">
-            <div class="gallery-visual" role="button" tabindex="0" aria-label="Inspect Nebula Visor Binary Telemetry artwork">
-              <canvas width="640" height="480" aria-label="Nebula Visor Binary Telemetry rendered in Binary 0/1 mode"></canvas>
+          <article class="gallery-card" data-mode="outline" data-gallery-id="brutalist-hollow-ink">
+            <div class="gallery-visual" role="button" tabindex="0" aria-label="Inspect Brutalist Minimalist Line Study artwork">
+              <canvas width="640" height="480" aria-label="Brutalist Minimalist Line Study rendered in Hollow Outline mode"></canvas>
               <div class="gallery-visual-overlay">
                 <span class="btn btn-sm btn-secondary">Inspect Artwork</span>
               </div>
             </div>
             <div class="gallery-card-body">
               <div class="gallery-card-head">
-                <h3 class="gallery-card-title">Nebula Visor Binary Telemetry</h3>
-                <span class="badge badge-binary">Binary 0/1</span>
+                <h3 class="gallery-card-title">Brutalist Minimalist Line Study</h3>
+                <span class="badge badge-outline">Hollow Outline</span>
               </div>
-              <div class="tech-specs" aria-label="Technical settings used"><span class="spec-chip">Grid: <strong>8px · 1.0x</strong></span><span class="spec-chip">Threshold: <strong>94 / 255</strong></span><span class="spec-chip">Underlay: <strong>8% Original</strong></span><span class="spec-chip">Dither: <strong>Bayer 4×4</strong></span><span class="spec-chip">Color: <strong>True RGB</strong></span></div>
-              <p class="gallery-card-desc">Adding a subtle 8% dimmed photographic underlay beneath dense 8px binary digits preserves the spherical glass sheen of the astronaut visor while letting fiery amber and turquoise nebula reflections read like live spacecraft telemetry.</p>
+              <div class="tech-specs" aria-label="Technical settings used"><span class="spec-chip">Interior: <strong>#FFFFFF</strong></span><span class="spec-chip">Threshold: <strong>36</strong></span><span class="spec-chip">Thickness: <strong>2.2px</strong></span><span class="spec-chip">Detail: <strong>Level 4</strong></span><span class="spec-chip">Ink: <strong>Studio Black</strong></span></div>
+              <p class="gallery-card-desc">Architectural arches and razor-sharp sunlight diagonals translate naturally into pure hollow ink drawings. A mid-high threshold (36) strips out raw concrete surface noise while preserving crisp cantilevered stairs and geometric shadow silhouettes over a pure white interior.</p>
               <div class="gallery-card-actions">
                 <button type="button" class="btn btn-sm btn-ghost js-inspect-btn">Inspect Details</button>
-                <a class="btn btn-sm btn-primary" href="/?preset=astronaut-binary-visor#studio">Open in Studio</a>
+                <a class="btn btn-sm btn-primary" href="/?preset=brutalist-hollow-ink#studio">Open in Studio</a>
               </div>
             </div>
           </article>
@@ -598,10 +696,11 @@
         <div class="section-header">
           <div>
             <p class="eyebrow">Digital Graphics Architecture</p>
-            <h2 id="modes-overview-heading">How Binary, ASCII &amp; Halftone Rendering Work</h2>
+            <h2 id="modes-overview-heading">How All Five Studio Rendering Modes Work</h2>
             <p class="section-subtitle">
-              Every output in ChromaGlyph Studio begins with block-averaged RGB sampling and perceptual Rec. 709
-              luminance calculation, then maps tonal structure onto three distinct typographic or geometric primitives.
+              Every output in ChromaGlyph Studio begins with area-averaged RGB sampling and perceptual Rec. 709
+              luminance calculation, then transforms tonal structure into typographic matrices, halftone dots,
+              translucent watercolor washes, or pure white-interior contour silhouettes.
             </p>
           </div>
           <a class="btn btn-secondary" href="/guides">Read the Complete Technical Guide &rarr;</a>
@@ -650,10 +749,39 @@
               <li>Maintains crisp vector-grade circular edges at any export resolution.</li>
             </ul>
           </article>
+
+          <article class="info-card">
+            <div class="info-card-icon" style="color: #2dd4bf;">◐~</div>
+            <h3>Aquarelle (Watercolor) Mode</h3>
+            <p>
+              Simulates wet-on-wet watercolor painting by layering semi-transparent radial pigment washes in optical
+              <code>multiply</code> blend mode over textured cold-press paper, allowing the source photograph's real
+              colors to bleed and mingle softly.
+            </p>
+            <ul>
+              <li>Tune Wash Softness &amp; Bleed, Pigment Intensity, and 5-level Brush Detail Scale in real time.</li>
+              <li>Subtle capillary drying rims and translucent edge pooling preserve subject contours naturally.</li>
+              <li>Toggle procedural cold-press paper tooth for authentic gallery-print tactile warmth.</li>
+            </ul>
+          </article>
+
+          <article class="info-card">
+            <div class="info-card-icon" style="color: var(--accent-amber);">▢</div>
+            <h3>Shape / Hollow Outline Mode</h3>
+            <p>
+              Extracts the primary shapes, contours, and silhouettes of your photograph using color-aware Sobel edge
+              detection and ridge thinning, leaving every interior shape pure crisp white (<code>#FFFFFF</code>).
+            </p>
+            <ul>
+              <li>Preserves boundaries between equally bright hues using RGB + Rec. 709 gradient tracking.</li>
+              <li>Control Edge Threshold, Outline Thickness (<code>1px–6px</code>), and Contour Detail Level.</li>
+              <li>Render outlines in Deepened Real Subject Colors, Crisp Studio Black Ink, or any active palette.</li>
+            </ul>
+          </article>
         </div>
 
         <div class="data-table-wrap" style="margin-top: 2.25rem;">
-          <table class="data-table" aria-label="Comparison of Binary, ASCII, and Halftone Dots rendering modes">
+          <table class="data-table" aria-label="Comparison of Binary, ASCII, Halftone Dots, Aquarelle, and Hollow Outline rendering modes">
             <thead>
               <tr>
                 <th>Rendering Mode</th>
@@ -683,6 +811,20 @@
                 <td>Anti-aliased circles on Square or 60° Hexagonal grids</td>
                 <td>Amplitude-modulated dot radius &amp; harmonic opacity</td>
                 <td>Architecture, editorial posters, bold color photography</td>
+                <td>1× / 2× HiDPI PNG</td>
+              </tr>
+              <tr>
+                <td><strong>Aquarelle</strong></td>
+                <td>Layered translucent pigment washes + cold-press paper grain</td>
+                <td>Wet-on-wet radial bleed + capillary edge pooling</td>
+                <td>Botanicals, landscapes, portraits with rich color harmony</td>
+                <td>1× / 2× HiDPI PNG</td>
+              </tr>
+              <tr>
+                <td><strong>Hollow Outline</strong></td>
+                <td>Clean thinned shape contours over pure white (<code>#FFFFFF</code>) interior</td>
+                <td>Color-aware Sobel + 8-way Non-Maximum Suppression</td>
+                <td>Architecture, wildlife silhouettes, graphic compositions</td>
                 <td>1× / 2× HiDPI PNG</td>
               </tr>
             </tbody>
@@ -820,6 +962,8 @@
             <li><a href="/?preset=neon-binary-matrix#studio">Binary 0/1 Mode</a></li>
             <li><a href="/?preset=aurora-ascii-tapestry#studio">ASCII Art Mode</a></li>
             <li><a href="/?preset=koi-hex-halftone#studio">Halftone Dots Mode</a></li>
+            <li><a href="/?preset=botanical-aquarelle-wash#studio">Aquarelle Watercolor</a></li>
+            <li><a href="/?preset=koi-hollow-contour#studio">Hollow Outline Mode</a></li>
           </ul>
         </div>
 

@@ -1,5 +1,6 @@
 /**
  * ChromaGlyph Studio — Interactive Multi-Mode Canvas Studio Controller
+ * Supports Binary (0/1), ASCII, Dots / Halftone, Aquarelle (Watercolor), and Shape / Hollow Outline modes.
  */
 
 import { SAMPLE_IMAGES, loadSampleImage, getSampleById } from './samples.js';
@@ -10,6 +11,14 @@ import {
 } from './renderer.js';
 import { getGalleryItemById } from './gallery-data.js';
 import { showToast } from './theme.js';
+
+const MODE_LABELS = {
+  binary: 'Binary 0/1',
+  ascii: 'ASCII',
+  dots: 'Dots / Halftone',
+  aquarelle: 'Aquarelle',
+  outline: 'Hollow Outline'
+};
 
 function initStudio() {
   const canvas = document.getElementById('studio-canvas');
@@ -45,11 +54,13 @@ function initStudio() {
   const statMode = document.getElementById('stat-mode');
   const statTime = document.getElementById('stat-time');
 
-  // Mode Tabs & Panels
+  // Mode Tabs & Mode-Specific Panels
   const modeTabs = document.querySelectorAll('.mode-tab');
   const binaryPanel = document.getElementById('panel-binary-options');
   const asciiPanel = document.getElementById('panel-ascii-options');
   const dotsPanel = document.getElementById('panel-dots-options');
+  const aquarellePanel = document.getElementById('panel-aquarelle-options');
+  const outlinePanel = document.getElementById('panel-outline-options');
 
   // Inputs
   const inputs = {
@@ -67,6 +78,14 @@ function initStudio() {
     dotStyle: document.getElementById('ctrl-dot-style'),
     dotHexGrid: document.getElementById('ctrl-dot-hex'),
     dotScale: document.getElementById('ctrl-dot-scale'),
+    aquarelleSoftness: document.getElementById('ctrl-aquarelle-softness'),
+    aquarellePigment: document.getElementById('ctrl-aquarelle-pigment'),
+    aquarelleDetail: document.getElementById('ctrl-aquarelle-detail'),
+    aquarellePaperGrain: document.getElementById('ctrl-aquarelle-grain'),
+    outlineThreshold: document.getElementById('ctrl-outline-threshold'),
+    outlineThickness: document.getElementById('ctrl-outline-thickness'),
+    outlineDetail: document.getElementById('ctrl-outline-detail'),
+    outlineInkStyle: document.getElementById('ctrl-outline-ink'),
     spotlightMode: document.getElementById('ctrl-spotlight-mode'),
     spotlightRadius: document.getElementById('ctrl-spotlight-radius')
   };
@@ -80,6 +99,12 @@ function initStudio() {
     underlayOpacity: document.getElementById('val-underlay'),
     binaryThreshold: document.getElementById('val-binary-threshold'),
     dotScale: document.getElementById('val-dot-scale'),
+    aquarelleSoftness: document.getElementById('val-aquarelle-softness'),
+    aquarellePigment: document.getElementById('val-aquarelle-pigment'),
+    aquarelleDetail: document.getElementById('val-aquarelle-detail'),
+    outlineThreshold: document.getElementById('val-outline-threshold'),
+    outlineThickness: document.getElementById('val-outline-thickness'),
+    outlineDetail: document.getElementById('val-outline-detail'),
     spotlightRadius: document.getElementById('val-spotlight-radius')
   };
 
@@ -118,9 +143,11 @@ function initStudio() {
     binaryPanel.classList.toggle('hidden-panel', c.mode !== 'binary');
     asciiPanel.classList.toggle('hidden-panel', c.mode !== 'ascii');
     dotsPanel.classList.toggle('hidden-panel', c.mode !== 'dots');
+    aquarellePanel.classList.toggle('hidden-panel', c.mode !== 'aquarelle');
+    outlinePanel.classList.toggle('hidden-panel', c.mode !== 'outline');
 
     if (copyTextBtn) {
-      copyTextBtn.style.display = c.mode === 'dots' ? 'none' : 'inline-flex';
+      copyTextBtn.style.display = c.mode === 'binary' || c.mode === 'ascii' ? 'inline-flex' : 'none';
     }
 
     inputs.cellSize.value = c.cellSize;
@@ -137,6 +164,14 @@ function initStudio() {
     inputs.dotStyle.value = c.dotStyle;
     inputs.dotHexGrid.checked = c.dotHexGrid;
     inputs.dotScale.value = Math.round(c.dotScale * 100);
+    inputs.aquarelleSoftness.value = c.aquarelleSoftness;
+    inputs.aquarellePigment.value = c.aquarellePigment;
+    inputs.aquarelleDetail.value = c.aquarelleDetail;
+    inputs.aquarellePaperGrain.checked = c.aquarellePaperGrain;
+    inputs.outlineThreshold.value = c.outlineThreshold;
+    inputs.outlineThickness.value = c.outlineThickness;
+    inputs.outlineDetail.value = c.outlineDetail;
+    inputs.outlineInkStyle.value = c.outlineInkStyle;
     inputs.spotlightMode.value = c.spotlightMode;
     inputs.spotlightRadius.value = c.spotlightRadius;
 
@@ -148,6 +183,12 @@ function initStudio() {
     outputs.underlayOpacity.textContent = `${Math.round(c.underlayOpacity * 100)}%`;
     outputs.binaryThreshold.textContent = `${c.binaryThreshold}`;
     outputs.dotScale.textContent = `${Math.round(c.dotScale * 100)}%`;
+    outputs.aquarelleSoftness.textContent = `${c.aquarelleSoftness}%`;
+    outputs.aquarellePigment.textContent = `${c.aquarellePigment}%`;
+    outputs.aquarelleDetail.textContent = `Level ${c.aquarelleDetail}`;
+    outputs.outlineThreshold.textContent = `${c.outlineThreshold}`;
+    outputs.outlineThickness.textContent = `${Number(c.outlineThickness).toFixed(1)}px`;
+    outputs.outlineDetail.textContent = `Level ${c.outlineDetail}`;
     outputs.spotlightRadius.textContent = `${c.spotlightRadius}px`;
 
     bgSwatches.forEach((btn) => {
@@ -161,6 +202,10 @@ function initStudio() {
         spotlightHint.textContent = 'Hover canvas: Original reveal lens';
       } else if (c.spotlightMode === 'glow') {
         spotlightHint.textContent = 'Hover canvas: Chromatic glow';
+      } else if (c.mode === 'aquarelle') {
+        spotlightHint.textContent = 'Hover canvas: Watercolor bloom spotlight';
+      } else if (c.mode === 'outline') {
+        spotlightHint.textContent = 'Hover canvas: Contour highlight lens';
       } else {
         spotlightHint.textContent = 'Hover canvas: Interactive spotlight active';
       }
@@ -198,16 +243,17 @@ function initStudio() {
       paintFrame();
 
       const r = state.renderResult;
-      const modeName =
-        state.config.mode === 'binary'
-          ? 'Binary 0/1'
-          : state.config.mode === 'dots'
-          ? 'Dots / Halftone'
-          : 'ASCII';
-
       if (statDims) statDims.textContent = `${r.width}×${r.height}px`;
-      if (statGrid) statGrid.textContent = `${r.cols}×${r.rows} (${(r.cols * r.rows).toLocaleString()} cells)`;
-      if (statMode) statMode.textContent = modeName;
+      if (statGrid) {
+        if (state.config.mode === 'aquarelle') {
+          statGrid.textContent = `${r.cols}×${r.rows} wash grid`;
+        } else if (state.config.mode === 'outline') {
+          statGrid.textContent = `${r.cols}×${r.rows} contour map`;
+        } else {
+          statGrid.textContent = `${r.cols}×${r.rows} (${(r.cols * r.rows).toLocaleString()} cells)`;
+        }
+      }
+      if (statMode) statMode.textContent = MODE_LABELS[state.config.mode] || state.config.mode;
       if (statTime) statTime.textContent = `${r.renderMs}ms`;
     };
 
@@ -215,7 +261,7 @@ function initStudio() {
     if (immediate) {
       execute();
     } else {
-      renderDebounce = setTimeout(execute, 18);
+      renderDebounce = setTimeout(execute, 24);
     }
   }
 
@@ -257,10 +303,26 @@ function initStudio() {
     reader.readAsDataURL(file);
   }
 
-  // Event Listeners: Mode Tabs
+  // Event Listeners: Mode Tabs with smart backdrop adaptation
   modeTabs.forEach((tab) => {
     tab.addEventListener('click', () => {
-      state.config.mode = tab.dataset.mode;
+      const prevMode = state.config.mode;
+      const nextMode = tab.dataset.mode;
+      state.config.mode = nextMode;
+
+      // Adapt canvas backdrop automatically for ideal first impression when switching between dark-native and paper-native modes
+      if (nextMode === 'aquarelle' && ['obsidian', 'black', 'slate'].includes(state.config.background)) {
+        state.config.background = 'warm';
+      } else if (nextMode === 'outline') {
+        state.config.background = 'paper';
+      } else if (
+        (prevMode === 'aquarelle' || prevMode === 'outline') &&
+        (nextMode === 'binary' || nextMode === 'ascii' || nextMode === 'dots') &&
+        (state.config.background === 'warm' || state.config.background === 'paper')
+      ) {
+        state.config.background = 'obsidian';
+      }
+
       syncControlsFromConfig();
       scheduleFullRender(true);
     });
@@ -347,6 +409,54 @@ function initStudio() {
     scheduleFullRender();
   });
 
+  // Aquarelle Mode Controls
+  inputs.aquarelleSoftness.addEventListener('input', (e) => {
+    state.config.aquarelleSoftness = Number(e.target.value);
+    outputs.aquarelleSoftness.textContent = `${state.config.aquarelleSoftness}%`;
+    scheduleFullRender();
+  });
+
+  inputs.aquarellePigment.addEventListener('input', (e) => {
+    state.config.aquarellePigment = Number(e.target.value);
+    outputs.aquarellePigment.textContent = `${state.config.aquarellePigment}%`;
+    scheduleFullRender();
+  });
+
+  inputs.aquarelleDetail.addEventListener('input', (e) => {
+    state.config.aquarelleDetail = Number(e.target.value);
+    outputs.aquarelleDetail.textContent = `Level ${state.config.aquarelleDetail}`;
+    scheduleFullRender();
+  });
+
+  inputs.aquarellePaperGrain.addEventListener('change', (e) => {
+    state.config.aquarellePaperGrain = e.target.checked;
+    scheduleFullRender(true);
+  });
+
+  // Shape / Hollow Outline Mode Controls
+  inputs.outlineThreshold.addEventListener('input', (e) => {
+    state.config.outlineThreshold = Number(e.target.value);
+    outputs.outlineThreshold.textContent = `${state.config.outlineThreshold}`;
+    scheduleFullRender();
+  });
+
+  inputs.outlineThickness.addEventListener('input', (e) => {
+    state.config.outlineThickness = Number(e.target.value);
+    outputs.outlineThickness.textContent = `${state.config.outlineThickness.toFixed(1)}px`;
+    scheduleFullRender();
+  });
+
+  inputs.outlineDetail.addEventListener('input', (e) => {
+    state.config.outlineDetail = Number(e.target.value);
+    outputs.outlineDetail.textContent = `Level ${state.config.outlineDetail}`;
+    scheduleFullRender();
+  });
+
+  inputs.outlineInkStyle.addEventListener('change', (e) => {
+    state.config.outlineInkStyle = e.target.value;
+    scheduleFullRender(true);
+  });
+
   inputs.spotlightMode.addEventListener('change', (e) => {
     state.config.spotlightMode = e.target.value;
     syncControlsFromConfig();
@@ -427,45 +537,61 @@ function initStudio() {
   if (resetBtn) {
     resetBtn.addEventListener('click', () => {
       const currentMode = state.config.mode;
-      state.config = { ...DEFAULT_CONFIG, mode: currentMode };
+      const defaultBg =
+        currentMode === 'aquarelle' ? 'warm' : currentMode === 'outline' ? 'paper' : 'obsidian';
+      state.config = { ...DEFAULT_CONFIG, mode: currentMode, background: defaultBg };
       syncControlsFromConfig();
       scheduleFullRender(true);
       showToast('Studio parameters reset to defaults.');
     });
   }
 
-  // Randomize Creative Recipe
+  // Randomize Creative Recipe (all 5 modes)
   if (randomizeBtn) {
     randomizeBtn.addEventListener('click', () => {
-      const modes = ['binary', 'ascii', 'dots'];
+      const modes = ['binary', 'ascii', 'dots', 'aquarelle', 'outline'];
       const ramps = ['classic', 'extended', 'blocks', 'geometric'];
       const palettes = ['rgb', 'rgb', 'vibrant', 'duotone', 'matrix', 'amber'];
       const bgs = ['obsidian', 'black', 'slate', 'paper'];
       const dotStyles = ['brightness', 'darkness', 'opacity'];
+      const inkStyles = ['rgb', 'ink', 'palette'];
 
       const mode = modes[Math.floor(Math.random() * modes.length)];
-      const bg = bgs[Math.floor(Math.random() * bgs.length)];
+      const bg =
+        mode === 'aquarelle'
+          ? Math.random() > 0.4 ? 'warm' : 'paper'
+          : mode === 'outline'
+          ? 'paper'
+          : bgs[Math.floor(Math.random() * bgs.length)];
 
       state.config = {
         ...state.config,
         mode,
         cellSize: 7 + Math.floor(Math.random() * 8),
         spacing: Number((0.92 + Math.random() * 0.25).toFixed(2)),
-        contrast: 8 + Math.floor(Math.random() * 28),
-        brightness: -6 + Math.floor(Math.random() * 18),
-        saturation: 105 + Math.floor(Math.random() * 40),
+        contrast: 10 + Math.floor(Math.random() * 26),
+        brightness: -4 + Math.floor(Math.random() * 16),
+        saturation: 108 + Math.floor(Math.random() * 36),
         background: bg,
         colorMode: palettes[Math.floor(Math.random() * palettes.length)],
         binaryThreshold: 85 + Math.floor(Math.random() * 55),
         binaryDither: Math.random() > 0.35,
         asciiRamp: ramps[Math.floor(Math.random() * ramps.length)],
         dotStyle: bg === 'paper' ? 'darkness' : dotStyles[Math.floor(Math.random() * dotStyles.length)],
-        dotHexGrid: Math.random() > 0.45
+        dotHexGrid: Math.random() > 0.45,
+        aquarelleSoftness: 42 + Math.floor(Math.random() * 48),
+        aquarellePigment: 72 + Math.floor(Math.random() * 52),
+        aquarelleDetail: 2 + Math.floor(Math.random() * 4),
+        aquarellePaperGrain: true,
+        outlineThreshold: 22 + Math.floor(Math.random() * 30),
+        outlineThickness: Number((1.5 + Math.random() * 2.2).toFixed(1)),
+        outlineDetail: 2 + Math.floor(Math.random() * 4),
+        outlineInkStyle: inkStyles[Math.floor(Math.random() * inkStyles.length)]
       };
 
       syncControlsFromConfig();
       scheduleFullRender(true);
-      showToast(`Generated a random ${mode.toUpperCase()} recipe!`);
+      showToast(`Generated a random ${MODE_LABELS[mode]} recipe!`);
     });
   }
 
@@ -497,7 +623,7 @@ function initStudio() {
   // Copy Plain Text (Binary / ASCII)
   if (copyTextBtn) {
     copyTextBtn.addEventListener('click', async () => {
-      if (!state.sourceImage || state.config.mode === 'dots') return;
+      if (!state.sourceImage || (state.config.mode !== 'binary' && state.config.mode !== 'ascii')) return;
       const textResult = renderArtwork(state.sourceImage, state.config, {
         maxDimension: 900,
         skipCells: true,

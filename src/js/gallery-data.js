@@ -1,7 +1,8 @@
 /**
  * Curated Pre-Generated Gallery Catalog
- * 9 hand-tuned artworks spanning Binary (0/1), ASCII, and Dots / Halftone modes.
- * Each item includes exact engine settings so users can open any recipe directly in the Studio.
+ * 13 hand-tuned artworks spanning Binary (0/1), ASCII, Dots / Halftone, Aquarelle (Watercolor),
+ * and Shape / Hollow Outline modes. Each item includes exact engine settings so users can open
+ * any recipe directly in the Studio.
  */
 
 export const GALLERY_ITEMS = [
@@ -102,12 +103,148 @@ export const GALLERY_ITEMS = [
       'Enabling the staggered hexagonal grid offsets alternating rows by half a cell—eliminating harsh horizontal banding along the curved spine of the Koi fish. Bright vermilion scales expand into full-radius dots while deep indigo water recedes into delicate pinpoints.'
   },
   {
+    id: 'botanical-aquarelle-wash',
+    title: 'Tropical Petal Aquarelle Wash',
+    mode: 'aquarelle',
+    modeLabel: 'Aquarelle',
+    sampleId: 'botanical-macro',
+    featured: true,
+    settings: {
+      mode: 'aquarelle',
+      cellSize: 11,
+      spacing: 1.0,
+      contrast: 14,
+      brightness: 12,
+      saturation: 134,
+      background: 'warm',
+      colorMode: 'rgb',
+      invert: false,
+      underlayOpacity: 0,
+      aquarelleSoftness: 68,
+      aquarellePigment: 96,
+      aquarelleDetail: 4,
+      aquarellePaperGrain: true,
+      spotlightMode: 'magnify'
+    },
+    techNotes: [
+      { label: 'Softness', value: '68% Bleed' },
+      { label: 'Pigment', value: '96%' },
+      { label: 'Detail', value: 'Level 4' },
+      { label: 'Paper', value: 'Cold-Press' },
+      { label: 'Color', value: 'True RGB' }
+    ],
+    description:
+      'Layered translucent radial washes in Multiply blend mode let coral, hibiscus magenta, and teal pigments bloom organically across warm cold-press paper. Setting Detail to Level 4 preserves delicate capillary edge rings along overlapping petals without losing painterly softness.'
+  },
+  {
+    id: 'koi-hollow-contour',
+    title: 'Crimson Koi Hollow Silhouette',
+    mode: 'outline',
+    modeLabel: 'Hollow Outline',
+    sampleId: 'crimson-koi',
+    featured: true,
+    settings: {
+      mode: 'outline',
+      cellSize: 10,
+      spacing: 1.0,
+      contrast: 26,
+      brightness: 6,
+      saturation: 132,
+      background: 'paper',
+      colorMode: 'rgb',
+      invert: false,
+      underlayOpacity: 0,
+      outlineThreshold: 30,
+      outlineThickness: 2.4,
+      outlineDetail: 3,
+      outlineInkStyle: 'rgb',
+      spotlightMode: 'reveal'
+    },
+    techNotes: [
+      { label: 'Interior', value: '#FFFFFF' },
+      { label: 'Threshold', value: '30' },
+      { label: 'Thickness', value: '2.4px' },
+      { label: 'Detail', value: 'Level 3' },
+      { label: 'Ink', value: 'Real RGB' }
+    ],
+    description:
+      'Color-aware Sobel edge extraction with non-maximum ridge thinning traces the graceful S-curve of the Koi and surrounding water ripples while keeping every interior shape crisp pure white (#FFFFFF). Deepened real-RGB outlines preserve the vermilion and indigo palette cleanly against bright paper.'
+  },
+  {
+    id: 'brutalist-hollow-ink',
+    title: 'Brutalist Minimalist Line Study',
+    mode: 'outline',
+    modeLabel: 'Hollow Outline',
+    sampleId: 'brutalist-sunbeam',
+    featured: true,
+    settings: {
+      mode: 'outline',
+      cellSize: 10,
+      spacing: 1.0,
+      contrast: 32,
+      brightness: 0,
+      saturation: 105,
+      background: 'paper',
+      colorMode: 'mono',
+      invert: false,
+      underlayOpacity: 0,
+      outlineThreshold: 36,
+      outlineThickness: 2.2,
+      outlineDetail: 4,
+      outlineInkStyle: 'ink',
+      spotlightMode: 'reveal'
+    },
+    techNotes: [
+      { label: 'Interior', value: '#FFFFFF' },
+      { label: 'Threshold', value: '36' },
+      { label: 'Thickness', value: '2.2px' },
+      { label: 'Detail', value: 'Level 4' },
+      { label: 'Ink', value: 'Studio Black' }
+    ],
+    description:
+      'Architectural arches and razor-sharp sunlight diagonals translate naturally into pure hollow ink drawings. A mid-high threshold (36) strips out raw concrete surface noise while preserving crisp cantilevered stairs and geometric shadow silhouettes over a pure white interior.'
+  },
+  {
+    id: 'aurora-aquarelle-dream',
+    title: 'Aurora Alpine Watercolor',
+    mode: 'aquarelle',
+    modeLabel: 'Aquarelle',
+    sampleId: 'aurora-peak',
+    featured: false,
+    settings: {
+      mode: 'aquarelle',
+      cellSize: 12,
+      spacing: 1.05,
+      contrast: 16,
+      brightness: 16,
+      saturation: 128,
+      background: 'paper',
+      colorMode: 'rgb',
+      invert: false,
+      underlayOpacity: 0,
+      aquarelleSoftness: 80,
+      aquarellePigment: 88,
+      aquarelleDetail: 3,
+      aquarellePaperGrain: true,
+      spotlightMode: 'magnify'
+    },
+    techNotes: [
+      { label: 'Softness', value: '80% Bleed' },
+      { label: 'Pigment', value: '88%' },
+      { label: 'Detail', value: 'Level 3' },
+      { label: 'Paper', value: 'Gallery White' },
+      { label: 'Color', value: 'True RGB' }
+    ],
+    description:
+      'Pushing Wash Softness to 80% lets emerald green and violet aurora ribbons diffuse into airy wet-on-wet skies while the bright snow-capped mountain peaks remain untouched white paper highlights—closely mimicking traditional landscape glazing techniques.'
+  },
+  {
     id: 'botanical-extended-ascii',
     title: 'Tropical Petal Micro-Glyphs',
     mode: 'ascii',
     modeLabel: 'ASCII Art',
     sampleId: 'botanical-macro',
-    featured: true,
+    featured: false,
     settings: {
       mode: 'ascii',
       cellSize: 8,
@@ -138,7 +275,7 @@ export const GALLERY_ITEMS = [
     mode: 'dots',
     modeLabel: 'Dots / Halftone',
     sampleId: 'brutalist-sunbeam',
-    featured: true,
+    featured: false,
     settings: {
       mode: 'dots',
       cellSize: 11,
@@ -171,7 +308,7 @@ export const GALLERY_ITEMS = [
     mode: 'binary',
     modeLabel: 'Binary 0/1',
     sampleId: 'cosmic-astronaut',
-    featured: true,
+    featured: false,
     settings: {
       mode: 'binary',
       cellSize: 8,
