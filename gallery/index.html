@@ -15,7 +15,7 @@
     href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&family=Space+Grotesk:wght@600;700&display=swap"
     rel="stylesheet"
   />
-  <link rel="stylesheet" href="/src/css/styles.css?v=2.6" />
+  <link rel="stylesheet" href="/src/css/styles.css?v=2.7" />
   <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4588627708948117" crossorigin="anonymous"></script>
   <script>
     (function () {
@@ -87,7 +87,7 @@
       <div class="container">
         <div class="filter-bar" role="group" aria-label="Filter gallery by rendering mode">
           <button type="button" class="filter-pill active" data-gallery-filter="all" aria-pressed="true">
-            All Studies (13)
+            All Studies (15)
           </button>
           <button type="button" class="filter-pill" data-gallery-filter="binary" aria-pressed="false">
             Binary 0/1 (3)
@@ -99,10 +99,10 @@
             Dots / Halftone (3)
           </button>
           <button type="button" class="filter-pill" data-gallery-filter="aquarelle" aria-pressed="false">
-            Aquarelle (2)
+            Aquarelle (3)
           </button>
           <button type="button" class="filter-pill" data-gallery-filter="outline" aria-pressed="false">
-            Hollow Outline (2)
+            Outline &amp; CAD (3)
           </button>
         </div>
 
@@ -170,6 +170,48 @@
             </div>
           </article>
 
+          <article class="gallery-card" data-mode="aquarelle" data-gallery-id="venice-aquarelle-morning">
+            <div class="gallery-visual" role="button" tabindex="0" aria-label="Inspect Venice Morning Aquarelle artwork">
+              <canvas width="640" height="480" aria-label="Venice Morning Aquarelle rendered in Aquarelle mode"></canvas>
+              <div class="gallery-visual-overlay">
+                <span class="btn btn-sm btn-secondary">Inspect Artwork</span>
+              </div>
+            </div>
+            <div class="gallery-card-body">
+              <div class="gallery-card-head">
+                <h3 class="gallery-card-title">Venice Morning Aquarelle</h3>
+                <span class="badge badge-aquarelle">Aquarelle</span>
+              </div>
+              <div class="tech-specs" aria-label="Technical settings used"><span class="spec-chip">Softness: <strong>56%</strong></span><span class="spec-chip">Backrun Rim: <strong>72%</strong></span><span class="spec-chip">Bleed: <strong>48%</strong></span><span class="spec-chip">Paper: <strong>Warm Cream</strong></span><span class="spec-chip">Color: <strong>True RGB</strong></span></div>
+              <p class="gallery-card-desc">Edge-preserving bilateral watercolor washes keep the warm terracotta facades cleanly separated from the turquoise Venetian canal while capillary backrun rims (72%) trace the stone bridge arches and gondola reflections across textured warm cotton paper.</p>
+              <div class="gallery-card-actions">
+                <button type="button" class="btn btn-sm btn-ghost js-inspect-btn">Inspect Details</button>
+                <a class="btn btn-sm btn-primary" href="/?preset=venice-aquarelle-morning#studio">Open in Studio</a>
+              </div>
+            </div>
+          </article>
+
+          <article class="gallery-card" data-mode="outline" data-gallery-id="cathedral-cad-elevation">
+            <div class="gallery-visual" role="button" tabindex="0" aria-label="Inspect Cathedral Architectural CAD artwork">
+              <canvas width="640" height="480" aria-label="Cathedral Architectural CAD rendered in Architectural CAD mode"></canvas>
+              <div class="gallery-visual-overlay">
+                <span class="btn btn-sm btn-secondary">Inspect Artwork</span>
+              </div>
+            </div>
+            <div class="gallery-card-body">
+              <div class="gallery-card-head">
+                <h3 class="gallery-card-title">Cathedral Architectural CAD</h3>
+                <span class="badge badge-outline">Architectural CAD</span>
+              </div>
+              <div class="tech-specs" aria-label="Technical settings used"><span class="spec-chip">Style: <strong>Arch CAD</strong></span><span class="spec-chip">Interior: <strong>#FFFFFF</strong></span><span class="spec-chip">Detail: <strong>Level 5</strong></span><span class="spec-chip">Weight: <strong>1.8px 3-Tier</strong></span><span class="spec-chip">Ink: <strong>Blueprint</strong></span></div>
+              <p class="gallery-card-desc">Architectural CAD mode separates the symmetrical cathedral facade into three technical line weights—bold primary stone contours, medium arches and columns, and fine hairline tracery—with orthogonal drafting snap, subtle corner overshoots, and a faint blueprint grid on pure white paper.</p>
+              <div class="gallery-card-actions">
+                <button type="button" class="btn btn-sm btn-ghost js-inspect-btn">Inspect Details</button>
+                <a class="btn btn-sm btn-primary" href="/?preset=cathedral-cad-elevation#studio">Open in Studio</a>
+              </div>
+            </div>
+          </article>
+
           <article class="gallery-card" data-mode="aquarelle" data-gallery-id="botanical-aquarelle-wash">
             <div class="gallery-visual" role="button" tabindex="0" aria-label="Inspect Tropical Petal Aquarelle Wash artwork">
               <canvas width="640" height="480" aria-label="Tropical Petal Aquarelle Wash rendered in Aquarelle mode"></canvas>
@@ -182,8 +224,8 @@
                 <h3 class="gallery-card-title">Tropical Petal Aquarelle Wash</h3>
                 <span class="badge badge-aquarelle">Aquarelle</span>
               </div>
-              <div class="tech-specs" aria-label="Technical settings used"><span class="spec-chip">Softness: <strong>68% Bleed</strong></span><span class="spec-chip">Pigment: <strong>96%</strong></span><span class="spec-chip">Detail: <strong>Level 4</strong></span><span class="spec-chip">Paper: <strong>Cold-Press</strong></span><span class="spec-chip">Color: <strong>True RGB</strong></span></div>
-              <p class="gallery-card-desc">Layered translucent radial washes in Multiply blend mode let coral, hibiscus magenta, and teal pigments bloom organically across warm cold-press paper. Setting Detail to Level 4 preserves delicate capillary edge rings along overlapping petals without losing painterly softness.</p>
+              <div class="tech-specs" aria-label="Technical settings used"><span class="spec-chip">Softness: <strong>62%</strong></span><span class="spec-chip">Backrun Rim: <strong>68%</strong></span><span class="spec-chip">Detail: <strong>Level 4</strong></span><span class="spec-chip">Paper: <strong>Cold-Press</strong></span><span class="spec-chip">Color: <strong>True RGB</strong></span></div>
+              <p class="gallery-card-desc">Edge-preserving bilateral washes let coral, hibiscus magenta, and teal pigments bloom cleanly across warm cold-press paper without muddying overlapping petals, accented by delicate darker capillary drying rims.</p>
               <div class="gallery-card-actions">
                 <button type="button" class="btn btn-sm btn-ghost js-inspect-btn">Inspect Details</button>
                 <a class="btn btn-sm btn-primary" href="/?preset=botanical-aquarelle-wash#studio">Open in Studio</a>
@@ -203,8 +245,8 @@
                 <h3 class="gallery-card-title">Crimson Koi Hollow Silhouette</h3>
                 <span class="badge badge-outline">Hollow Outline</span>
               </div>
-              <div class="tech-specs" aria-label="Technical settings used"><span class="spec-chip">Interior: <strong>#FFFFFF</strong></span><span class="spec-chip">Threshold: <strong>30</strong></span><span class="spec-chip">Thickness: <strong>2.4px</strong></span><span class="spec-chip">Detail: <strong>Level 3</strong></span><span class="spec-chip">Ink: <strong>Real RGB</strong></span></div>
-              <p class="gallery-card-desc">Color-aware Sobel edge extraction with non-maximum ridge thinning traces the graceful S-curve of the Koi and surrounding water ripples while keeping every interior shape crisp pure white (#FFFFFF). Deepened real-RGB outlines preserve the vermilion and indigo palette cleanly against bright paper.</p>
+              <div class="tech-specs" aria-label="Technical settings used"><span class="spec-chip">Style: <strong>Normal Line</strong></span><span class="spec-chip">Interior: <strong>#FFFFFF</strong></span><span class="spec-chip">Threshold: <strong>30</strong></span><span class="spec-chip">Thickness: <strong>2.4px</strong></span><span class="spec-chip">Ink: <strong>Real RGB</strong></span></div>
+              <p class="gallery-card-desc">Line-first RDP simplification traces the graceful S-curve of the Koi and surrounding water ripples into clean geometric segments over a crisp pure white (#FFFFFF) interior, using deepened real-RGB outlines to retain the vermilion and indigo palette.</p>
               <div class="gallery-card-actions">
                 <button type="button" class="btn btn-sm btn-ghost js-inspect-btn">Inspect Details</button>
                 <a class="btn btn-sm btn-primary" href="/?preset=koi-hollow-contour#studio">Open in Studio</a>
@@ -213,19 +255,19 @@
           </article>
 
           <article class="gallery-card" data-mode="outline" data-gallery-id="brutalist-hollow-ink">
-            <div class="gallery-visual" role="button" tabindex="0" aria-label="Inspect Brutalist Minimalist Line Study artwork">
-              <canvas width="640" height="480" aria-label="Brutalist Minimalist Line Study rendered in Hollow Outline mode"></canvas>
+            <div class="gallery-visual" role="button" tabindex="0" aria-label="Inspect Brutalist Architectural Line Study artwork">
+              <canvas width="640" height="480" aria-label="Brutalist Architectural Line Study rendered in Architectural CAD mode"></canvas>
               <div class="gallery-visual-overlay">
                 <span class="btn btn-sm btn-secondary">Inspect Artwork</span>
               </div>
             </div>
             <div class="gallery-card-body">
               <div class="gallery-card-head">
-                <h3 class="gallery-card-title">Brutalist Minimalist Line Study</h3>
-                <span class="badge badge-outline">Hollow Outline</span>
+                <h3 class="gallery-card-title">Brutalist Architectural Line Study</h3>
+                <span class="badge badge-outline">Architectural CAD</span>
               </div>
-              <div class="tech-specs" aria-label="Technical settings used"><span class="spec-chip">Interior: <strong>#FFFFFF</strong></span><span class="spec-chip">Threshold: <strong>36</strong></span><span class="spec-chip">Thickness: <strong>2.2px</strong></span><span class="spec-chip">Detail: <strong>Level 4</strong></span><span class="spec-chip">Ink: <strong>Studio Black</strong></span></div>
-              <p class="gallery-card-desc">Architectural arches and razor-sharp sunlight diagonals translate naturally into pure hollow ink drawings. A mid-high threshold (36) strips out raw concrete surface noise while preserving crisp cantilevered stairs and geometric shadow silhouettes over a pure white interior.</p>
+              <div class="tech-specs" aria-label="Technical settings used"><span class="spec-chip">Style: <strong>Arch CAD</strong></span><span class="spec-chip">Interior: <strong>#FFFFFF</strong></span><span class="spec-chip">Threshold: <strong>32</strong></span><span class="spec-chip">Weight: <strong>2.0px 3-Tier</strong></span><span class="spec-chip">Ink: <strong>Studio Black</strong></span></div>
+              <p class="gallery-card-desc">Modernist concrete arches and razor-sharp sunlight diagonals snap cleanly into orthogonal CAD drafting elevations with primary structural edges, delicate secondary shadow lines, and crisp 45° section hatching on pure white paper.</p>
               <div class="gallery-card-actions">
                 <button type="button" class="btn btn-sm btn-ghost js-inspect-btn">Inspect Details</button>
                 <a class="btn btn-sm btn-primary" href="/?preset=brutalist-hollow-ink#studio">Open in Studio</a>
@@ -481,7 +523,7 @@
     </div>
   </footer>
 
-  <script type="module" src="/src/js/theme.js?v=2.6"></script>
-  <script type="module" src="/src/js/gallery-renderer.js?v=2.6"></script>
+  <script type="module" src="/src/js/theme.js?v=2.7"></script>
+  <script type="module" src="/src/js/gallery-renderer.js?v=2.7"></script>
 </body>
 </html>

@@ -592,20 +592,36 @@ button, input, select, textarea {
 .sample-strip {
   display: flex;
   align-items: center;
-  gap: 0.55rem;
-  flex-wrap: wrap;
+  gap: 0.45rem;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  flex: 1;
+  min-width: 0;
+  padding-bottom: 0.15rem;
+  scrollbar-width: thin;
+}
+
+.sample-strip::-webkit-scrollbar {
+  height: 5px;
+}
+
+.sample-strip::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 999px;
 }
 
 .sample-strip-label {
-  font-size: 0.75rem;
+  flex-shrink: 0;
+  font-size: 0.74rem;
   font-family: var(--font-mono);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--text-muted);
-  margin-right: 0.2rem;
+  margin-right: 0.15rem;
 }
 
 .sample-thumb-btn {
+  flex-shrink: 0;
   position: relative;
   display: inline-flex;
   align-items: center;
@@ -618,7 +634,59 @@ button, input, select, textarea {
   font-size: 0.78rem;
   font-weight: 500;
   cursor: pointer;
-  transition: all var(--transition);
+  transition: background-color var(--transition), border-color var(--transition), color var(--transition), transform var(--transition);
+}
+
+/* Segmented Sub-Mode Switcher & Auto-Tune Bar */
+.autotune-bar {
+  padding: 0.75rem 1.15rem 0;
+}
+
+.btn-autotune {
+  width: 100%;
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.16) 0%, rgba(167, 139, 250, 0.18) 100%);
+  border: 1px solid var(--border-accent);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.btn-autotune:hover {
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.26) 0%, rgba(167, 139, 250, 0.28) 100%);
+  border-color: var(--accent);
+  color: var(--text);
+  transform: translateY(-1px);
+}
+
+.segmented-control {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.35rem;
+  padding: 0.25rem;
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+}
+
+.segmented-btn {
+  padding: 0.45rem 0.55rem;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color var(--transition), color var(--transition), border-color var(--transition);
+}
+
+.segmented-btn:hover {
+  color: var(--text);
+}
+
+.segmented-btn.active {
+  background: var(--accent-glow);
+  border-color: var(--border-accent);
+  color: var(--text);
 }
 
 .sample-thumb-btn img {

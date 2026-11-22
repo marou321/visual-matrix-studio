@@ -21,7 +21,7 @@
     href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&family=Space+Grotesk:wght@600;700&display=swap"
     rel="stylesheet"
   />
-  <link rel="stylesheet" href="/src/css/styles.css?v=2.6" />
+  <link rel="stylesheet" href="/src/css/styles.css?v=2.7" />
   <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4588627708948117" crossorigin="anonymous"></script>
   <script type="application/ld+json">
     {
@@ -248,6 +248,21 @@
                 </button>
               </div>
 
+              <!-- Smart Auto-Tune "Best Parameters" Button for Active Mode -->
+              <div class="autotune-bar">
+                <button
+                  id="auto-tune-btn"
+                  type="button"
+                  class="btn btn-sm btn-autotune"
+                  title="Analyze the current image and apply balanced parameters for this mode"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M12 3l1.9 5.8L20 11l-6.1 2.2L12 19l-1.9-5.8L4 11l6.1-2.2L12 3z" />
+                  </svg>
+                  <span id="auto-tune-label">Best Parameters (ASCII)</span>
+                </button>
+              </div>
+
               <div class="inspector-body">
                 <!-- Geometry & Grid -->
                 <div class="control-group">
@@ -282,6 +297,25 @@
                     <input id="ctrl-binary-threshold" type="range" min="20" max="235" step="1" value="112" />
                   </div>
 
+                  <div class="control-row">
+                    <div class="control-label-row">
+                      <label for="ctrl-binary-bitset">Bit Glyph Pair</label>
+                    </div>
+                    <select id="ctrl-binary-bitset" class="select-input">
+                      <option value="01">Classic Binary (1 / 0)</option>
+                      <option value="1dot">Sparse Bitstream (1 / ·)</option>
+                      <option value="blocks">Binary Blocks (█ / ░)</option>
+                    </select>
+                  </div>
+
+                  <div class="control-row">
+                    <div class="control-label-row">
+                      <label for="ctrl-binary-zero-opacity">Zero-Bit Opacity</label>
+                      <output id="val-binary-zero-opacity" class="control-value">38%</output>
+                    </div>
+                    <input id="ctrl-binary-zero-opacity" type="range" min="10" max="95" step="2" value="38" />
+                  </div>
+
                   <label class="toggle-row">
                     <span>Bayer 4×4 Ordered Dithering</span>
                     <span class="switch">
@@ -307,6 +341,25 @@
                       <option value="minimal">High-Contrast (#+=:-.)</option>
                     </select>
                   </div>
+
+                  <div class="control-row">
+                    <div class="control-label-row">
+                      <label for="ctrl-ascii-weight">Glyph Stroke Weight</label>
+                    </div>
+                    <select id="ctrl-ascii-weight" class="select-input">
+                      <option value="400">Regular (Lighter Ink)</option>
+                      <option value="700" selected>Bold (Balanced)</option>
+                      <option value="900">Heavy (Dense Impact)</option>
+                    </select>
+                  </div>
+
+                  <div class="control-row">
+                    <div class="control-label-row">
+                      <label for="ctrl-ascii-gamma">Midtone Gamma Curve</label>
+                      <output id="val-ascii-gamma" class="control-value">1.00</output>
+                    </div>
+                    <input id="ctrl-ascii-gamma" type="range" min="0.55" max="1.85" step="0.05" value="1" />
+                  </div>
                 </div>
 
                 <!-- Mode-Specific Controls: Dots / Halftone -->
@@ -326,10 +379,29 @@
 
                   <div class="control-row">
                     <div class="control-label-row">
+                      <label for="ctrl-dot-shape">Dot Primitive Shape</label>
+                    </div>
+                    <select id="ctrl-dot-shape" class="select-input">
+                      <option value="circle">Circles (Classic Halftone)</option>
+                      <option value="square">Squares (LED Pixel)</option>
+                      <option value="diamond">Diamonds (Print Screen)</option>
+                    </select>
+                  </div>
+
+                  <div class="control-row">
+                    <div class="control-label-row">
                       <label for="ctrl-dot-scale">Max Dot Scale</label>
                       <output id="val-dot-scale" class="control-value">92%</output>
                     </div>
                     <input id="ctrl-dot-scale" type="range" min="45" max="125" step="2" value="92" />
+                  </div>
+
+                  <div class="control-row">
+                    <div class="control-label-row">
+                      <label for="ctrl-dot-min-scale">Min Dot Floor</label>
+                      <output id="val-dot-min-scale" class="control-value">12%</output>
+                    </div>
+                    <input id="ctrl-dot-min-scale" type="range" min="0" max="40" step="2" value="12" />
                   </div>
 
                   <label class="toggle-row">
@@ -347,30 +419,46 @@
 
                   <div class="control-row">
                     <div class="control-label-row">
-                      <label for="ctrl-aquarelle-softness">Wash Softness &amp; Bleed</label>
-                      <output id="val-aquarelle-softness" class="control-value">62%</output>
+                      <label for="ctrl-aquarelle-softness">Wash Softness &amp; Spread</label>
+                      <output id="val-aquarelle-softness" class="control-value">58%</output>
                     </div>
-                    <input id="ctrl-aquarelle-softness" type="range" min="20" max="100" step="2" value="62" />
+                    <input id="ctrl-aquarelle-softness" type="range" min="20" max="100" step="2" value="58" />
                   </div>
 
                   <div class="control-row">
                     <div class="control-label-row">
                       <label for="ctrl-aquarelle-pigment">Pigment Intensity</label>
-                      <output id="val-aquarelle-pigment" class="control-value">92%</output>
+                      <output id="val-aquarelle-pigment" class="control-value">95%</output>
                     </div>
-                    <input id="ctrl-aquarelle-pigment" type="range" min="35" max="145" step="2" value="92" />
+                    <input id="ctrl-aquarelle-pigment" type="range" min="35" max="145" step="2" value="95" />
                   </div>
 
                   <div class="control-row">
                     <div class="control-label-row">
-                      <label for="ctrl-aquarelle-detail">Brush Detail Scale</label>
+                      <label for="ctrl-aquarelle-rim">Backrun Rim Darkening</label>
+                      <output id="val-aquarelle-rim" class="control-value">66%</output>
+                    </div>
+                    <input id="ctrl-aquarelle-rim" type="range" min="0" max="100" step="2" value="66" />
+                  </div>
+
+                  <div class="control-row">
+                    <div class="control-label-row">
+                      <label for="ctrl-aquarelle-bleed">Organic Edge Bleed</label>
+                      <output id="val-aquarelle-bleed" class="control-value">46%</output>
+                    </div>
+                    <input id="ctrl-aquarelle-bleed" type="range" min="0" max="100" step="2" value="46" />
+                  </div>
+
+                  <div class="control-row">
+                    <div class="control-label-row">
+                      <label for="ctrl-aquarelle-detail">Wash Region Detail</label>
                       <output id="val-aquarelle-detail" class="control-value">Level 3</output>
                     </div>
                     <input id="ctrl-aquarelle-detail" type="range" min="1" max="5" step="1" value="3" />
                   </div>
 
                   <label class="toggle-row">
-                    <span>Cold-Press Paper Grain</span>
+                    <span>Cold-Press Paper Tooth</span>
                     <span class="switch">
                       <input id="ctrl-aquarelle-grain" type="checkbox" checked />
                       <span class="switch-slider"></span>
@@ -378,9 +466,23 @@
                   </label>
                 </div>
 
-                <!-- Mode-Specific Controls: Shape / Hollow Outline -->
+                <!-- Mode-Specific Controls: Outline (Normal + Architectural CAD) -->
                 <div id="panel-outline-options" class="control-group hidden-panel">
-                  <h2 class="control-group-title">Shape / Hollow Outline (#FFFFFF)</h2>
+                  <h2 class="control-group-title">Outline &amp; CAD (#FFFFFF Interior)</h2>
+
+                  <div class="control-row">
+                    <div class="control-label-row">
+                      <span>Outline Sub-Mode</span>
+                    </div>
+                    <div class="segmented-control" role="group" aria-label="Outline sub-mode">
+                      <button type="button" class="segmented-btn active" data-outline-submode="normal" aria-pressed="true">
+                        Normal Outline
+                      </button>
+                      <button type="button" class="segmented-btn" data-outline-submode="cad" aria-pressed="false">
+                        Architectural CAD
+                      </button>
+                    </div>
+                  </div>
 
                   <div class="control-row">
                     <div class="control-label-row">
@@ -392,15 +494,15 @@
 
                   <div class="control-row">
                     <div class="control-label-row">
-                      <label for="ctrl-outline-thickness">Outline Thickness</label>
+                      <label for="ctrl-outline-thickness">Primary Line Weight</label>
                       <output id="val-outline-thickness" class="control-value">2.2px</output>
                     </div>
-                    <input id="ctrl-outline-thickness" type="range" min="1" max="6" step="0.2" value="2.2" />
+                    <input id="ctrl-outline-thickness" type="range" min="0.8" max="6" step="0.2" value="2.2" />
                   </div>
 
                   <div class="control-row">
                     <div class="control-label-row">
-                      <label for="ctrl-outline-detail">Contour Detail Level</label>
+                      <label for="ctrl-outline-detail">Structural Detail Level</label>
                       <output id="val-outline-detail" class="control-value">Level 3</output>
                     </div>
                     <input id="ctrl-outline-detail" type="range" min="1" max="5" step="1" value="3" />
@@ -408,14 +510,31 @@
 
                   <div class="control-row">
                     <div class="control-label-row">
-                      <label for="ctrl-outline-ink">Outline Ink Style</label>
+                      <label for="ctrl-outline-noise">Speckle / Noise Cleanup</label>
+                      <output id="val-outline-noise" class="control-value">4px min</output>
+                    </div>
+                    <input id="ctrl-outline-noise" type="range" min="1" max="10" step="1" value="4" />
+                  </div>
+
+                  <div class="control-row">
+                    <div class="control-label-row">
+                      <label for="ctrl-outline-ink">Outline Ink Color</label>
                     </div>
                     <select id="ctrl-outline-ink" class="select-input">
                       <option value="rgb">Real Subject Colors (Deepened)</option>
                       <option value="ink">Studio Black Ink (#0F172A)</option>
+                      <option value="blueprint">Blueprint Indigo (#173A8C)</option>
                       <option value="palette">Active Color Palette</option>
                     </select>
                   </div>
+
+                  <label id="row-outline-cad-grid" class="toggle-row hidden-panel">
+                    <span>CAD Drafting Grid &amp; Overshoots</span>
+                    <span class="switch">
+                      <input id="ctrl-outline-cad-grid" type="checkbox" checked />
+                      <span class="switch-slider"></span>
+                    </span>
+                  </label>
                 </div>
 
                 <!-- Color & Tone Adjustments -->
@@ -557,7 +676,7 @@
               Each study documents its exact settings—hover any piece for a live spotlight or open it directly in the Studio.
             </p>
           </div>
-          <a class="btn btn-secondary" href="/gallery">View All 13 Gallery Studies &rarr;</a>
+          <a class="btn btn-secondary" href="/gallery">View All 15 Gallery Studies &rarr;</a>
         </div>
 
         <div id="featured-gallery-grid" class="gallery-grid">
@@ -624,23 +743,44 @@
             </div>
           </article>
 
-          <article class="gallery-card" data-mode="aquarelle" data-gallery-id="botanical-aquarelle-wash">
-            <div class="gallery-visual" role="button" tabindex="0" aria-label="Inspect Tropical Petal Aquarelle Wash artwork">
-              <canvas width="640" height="480" aria-label="Tropical Petal Aquarelle Wash rendered in Aquarelle mode"></canvas>
+          <article class="gallery-card" data-mode="aquarelle" data-gallery-id="venice-aquarelle-morning">
+            <div class="gallery-visual" role="button" tabindex="0" aria-label="Inspect Venice Morning Aquarelle artwork">
+              <canvas width="640" height="480" aria-label="Venice Morning Aquarelle rendered in Aquarelle mode"></canvas>
               <div class="gallery-visual-overlay">
                 <span class="btn btn-sm btn-secondary">Inspect Artwork</span>
               </div>
             </div>
             <div class="gallery-card-body">
               <div class="gallery-card-head">
-                <h3 class="gallery-card-title">Tropical Petal Aquarelle Wash</h3>
+                <h3 class="gallery-card-title">Venice Morning Aquarelle</h3>
                 <span class="badge badge-aquarelle">Aquarelle</span>
               </div>
-              <div class="tech-specs" aria-label="Technical settings used"><span class="spec-chip">Softness: <strong>68% Bleed</strong></span><span class="spec-chip">Pigment: <strong>96%</strong></span><span class="spec-chip">Detail: <strong>Level 4</strong></span><span class="spec-chip">Paper: <strong>Cold-Press</strong></span><span class="spec-chip">Color: <strong>True RGB</strong></span></div>
-              <p class="gallery-card-desc">Layered translucent radial washes in Multiply blend mode let coral, hibiscus magenta, and teal pigments bloom organically across warm cold-press paper. Setting Detail to Level 4 preserves delicate capillary edge rings along overlapping petals without losing painterly softness.</p>
+              <div class="tech-specs" aria-label="Technical settings used"><span class="spec-chip">Softness: <strong>56%</strong></span><span class="spec-chip">Backrun Rim: <strong>72%</strong></span><span class="spec-chip">Bleed: <strong>48%</strong></span><span class="spec-chip">Paper: <strong>Warm Cream</strong></span><span class="spec-chip">Color: <strong>True RGB</strong></span></div>
+              <p class="gallery-card-desc">Edge-preserving bilateral watercolor washes keep the warm terracotta facades cleanly separated from the turquoise Venetian canal while capillary backrun rims (72%) trace the stone bridge arches and gondola reflections across textured warm cotton paper.</p>
               <div class="gallery-card-actions">
                 <button type="button" class="btn btn-sm btn-ghost js-inspect-btn">Inspect Details</button>
-                <a class="btn btn-sm btn-primary" href="/?preset=botanical-aquarelle-wash#studio">Open in Studio</a>
+                <a class="btn btn-sm btn-primary" href="/?preset=venice-aquarelle-morning#studio">Open in Studio</a>
+              </div>
+            </div>
+          </article>
+
+          <article class="gallery-card" data-mode="outline" data-gallery-id="cathedral-cad-elevation">
+            <div class="gallery-visual" role="button" tabindex="0" aria-label="Inspect Cathedral Architectural CAD artwork">
+              <canvas width="640" height="480" aria-label="Cathedral Architectural CAD rendered in Architectural CAD mode"></canvas>
+              <div class="gallery-visual-overlay">
+                <span class="btn btn-sm btn-secondary">Inspect Artwork</span>
+              </div>
+            </div>
+            <div class="gallery-card-body">
+              <div class="gallery-card-head">
+                <h3 class="gallery-card-title">Cathedral Architectural CAD</h3>
+                <span class="badge badge-outline">Architectural CAD</span>
+              </div>
+              <div class="tech-specs" aria-label="Technical settings used"><span class="spec-chip">Style: <strong>Arch CAD</strong></span><span class="spec-chip">Interior: <strong>#FFFFFF</strong></span><span class="spec-chip">Detail: <strong>Level 5</strong></span><span class="spec-chip">Weight: <strong>1.8px 3-Tier</strong></span><span class="spec-chip">Ink: <strong>Blueprint</strong></span></div>
+              <p class="gallery-card-desc">Architectural CAD mode separates the symmetrical cathedral facade into three technical line weights—bold primary stone contours, medium arches and columns, and fine hairline tracery—with orthogonal drafting snap, subtle corner overshoots, and a faint blueprint grid on pure white paper.</p>
+              <div class="gallery-card-actions">
+                <button type="button" class="btn btn-sm btn-ghost js-inspect-btn">Inspect Details</button>
+                <a class="btn btn-sm btn-primary" href="/?preset=cathedral-cad-elevation#studio">Open in Studio</a>
               </div>
             </div>
           </article>
@@ -657,32 +797,11 @@
                 <h3 class="gallery-card-title">Crimson Koi Hollow Silhouette</h3>
                 <span class="badge badge-outline">Hollow Outline</span>
               </div>
-              <div class="tech-specs" aria-label="Technical settings used"><span class="spec-chip">Interior: <strong>#FFFFFF</strong></span><span class="spec-chip">Threshold: <strong>30</strong></span><span class="spec-chip">Thickness: <strong>2.4px</strong></span><span class="spec-chip">Detail: <strong>Level 3</strong></span><span class="spec-chip">Ink: <strong>Real RGB</strong></span></div>
-              <p class="gallery-card-desc">Color-aware Sobel edge extraction with non-maximum ridge thinning traces the graceful S-curve of the Koi and surrounding water ripples while keeping every interior shape crisp pure white (#FFFFFF). Deepened real-RGB outlines preserve the vermilion and indigo palette cleanly against bright paper.</p>
+              <div class="tech-specs" aria-label="Technical settings used"><span class="spec-chip">Style: <strong>Normal Line</strong></span><span class="spec-chip">Interior: <strong>#FFFFFF</strong></span><span class="spec-chip">Threshold: <strong>30</strong></span><span class="spec-chip">Thickness: <strong>2.4px</strong></span><span class="spec-chip">Ink: <strong>Real RGB</strong></span></div>
+              <p class="gallery-card-desc">Line-first RDP simplification traces the graceful S-curve of the Koi and surrounding water ripples into clean geometric segments over a crisp pure white (#FFFFFF) interior, using deepened real-RGB outlines to retain the vermilion and indigo palette.</p>
               <div class="gallery-card-actions">
                 <button type="button" class="btn btn-sm btn-ghost js-inspect-btn">Inspect Details</button>
                 <a class="btn btn-sm btn-primary" href="/?preset=koi-hollow-contour#studio">Open in Studio</a>
-              </div>
-            </div>
-          </article>
-
-          <article class="gallery-card" data-mode="outline" data-gallery-id="brutalist-hollow-ink">
-            <div class="gallery-visual" role="button" tabindex="0" aria-label="Inspect Brutalist Minimalist Line Study artwork">
-              <canvas width="640" height="480" aria-label="Brutalist Minimalist Line Study rendered in Hollow Outline mode"></canvas>
-              <div class="gallery-visual-overlay">
-                <span class="btn btn-sm btn-secondary">Inspect Artwork</span>
-              </div>
-            </div>
-            <div class="gallery-card-body">
-              <div class="gallery-card-head">
-                <h3 class="gallery-card-title">Brutalist Minimalist Line Study</h3>
-                <span class="badge badge-outline">Hollow Outline</span>
-              </div>
-              <div class="tech-specs" aria-label="Technical settings used"><span class="spec-chip">Interior: <strong>#FFFFFF</strong></span><span class="spec-chip">Threshold: <strong>36</strong></span><span class="spec-chip">Thickness: <strong>2.2px</strong></span><span class="spec-chip">Detail: <strong>Level 4</strong></span><span class="spec-chip">Ink: <strong>Studio Black</strong></span></div>
-              <p class="gallery-card-desc">Architectural arches and razor-sharp sunlight diagonals translate naturally into pure hollow ink drawings. A mid-high threshold (36) strips out raw concrete surface noise while preserving crisp cantilevered stairs and geometric shadow silhouettes over a pure white interior.</p>
-              <div class="gallery-card-actions">
-                <button type="button" class="btn btn-sm btn-ghost js-inspect-btn">Inspect Details</button>
-                <a class="btn btn-sm btn-primary" href="/?preset=brutalist-hollow-ink#studio">Open in Studio</a>
               </div>
             </div>
           </article>
@@ -767,16 +886,16 @@
 
           <article class="info-card">
             <div class="info-card-icon" style="color: var(--accent-amber);">▢</div>
-            <h3>Geometric Line-First Outline Mode</h3>
+            <h3>Outline &amp; Architectural CAD Mode</h3>
             <p>
-              Traces subject contours and simplifies them via Ramer–Douglas–Peucker (RDP) geometry into crisp straight
-              line segments over a pure white (<code>#FFFFFF</code>) interior—falling back cleanly to hollow geometric
-              polygons where clear edges are scarce.
+              Switch between <strong>Normal Outline</strong> (RDP straight line-first contours + hollow geometric
+              polygon fallback) and <strong>Architectural CAD</strong> (3-tier technical line weights, orthogonal
+              drafting snap, corner overshoots, and optional blueprint grid) over a pure white (<code>#FFFFFF</code>) interior.
             </p>
             <ul>
-              <li>Prioritizes clean straight lines and structural edges while discarding messy pixel static.</li>
-              <li>Emits minimal hollow triangles, diamonds, or hexagons in soft low-edge subject regions.</li>
-              <li>Render in Deepened Real Subject Colors, Crisp Studio Black Ink, or any active palette at 1× or 2× PNG.</li>
+              <li>Includes a one-click <strong>Best Parameters</strong> auto-tuner tailored to each uploaded photo.</li>
+              <li>Adjust Edge Threshold, Primary Line Weight, Structural Detail, and Speckle Cleanup cleanly.</li>
+              <li>Render in Real Subject Colors, Studio Black Ink, or Blueprint Indigo at 1× or 2× HiDPI PNG.</li>
             </ul>
           </article>
         </div>
@@ -995,8 +1114,8 @@
     </div>
   </footer>
 
-  <script type="module" src="/src/js/theme.js?v=2.6"></script>
-  <script type="module" src="/src/js/studio.js?v=2.6"></script>
-  <script type="module" src="/src/js/gallery-renderer.js?v=2.6"></script>
+  <script type="module" src="/src/js/theme.js?v=2.7"></script>
+  <script type="module" src="/src/js/studio.js?v=2.7"></script>
+  <script type="module" src="/src/js/gallery-renderer.js?v=2.7"></script>
 </body>
 </html>

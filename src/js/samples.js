@@ -1,5 +1,5 @@
 /**
- * Preloaded sample image catalog and cached image loader.
+ * Preloaded sample image catalog (10 varied subjects) and cached image loader.
  */
 
 export const SAMPLE_IMAGES = [
@@ -9,6 +9,20 @@ export const SAMPLE_IMAGES = [
     src: '/assets/samples/neon-portrait.jpg',
     alt: 'Futuristic editorial profile portrait illuminated by cyan and magenta rim lighting against obsidian black',
     category: 'Portrait'
+  },
+  {
+    id: 'venice-canal',
+    name: 'Venice Canal',
+    src: '/assets/samples/venice-canal.jpg',
+    alt: 'Sunlit Venice canal with warm terracotta and ochre buildings, stone arch bridge, gondolas, and turquoise reflections',
+    category: 'Watercolor'
+  },
+  {
+    id: 'cathedral-facade',
+    name: 'Cathedral CAD',
+    src: '/assets/samples/cathedral-facade.jpg',
+    alt: 'Symmetrical European limestone cathedral facade with fluted columns, stone arches, and rose window against blue sky',
+    category: 'Architecture'
   },
   {
     id: 'crimson-koi',
@@ -32,11 +46,25 @@ export const SAMPLE_IMAGES = [
     category: 'Macro'
   },
   {
+    id: 'geometric-bauhaus',
+    name: 'Bauhaus Shapes',
+    src: '/assets/samples/geometric-bauhaus.jpg',
+    alt: 'Minimalist Bauhaus still life with vermilion sphere, cobalt cylinder, yellow pyramid, and white arch with sharp shadows',
+    category: 'Graphic'
+  },
+  {
     id: 'brutalist-sunbeam',
     name: 'Brutalist Light',
     src: '/assets/samples/brutalist-sunbeam.jpg',
     alt: 'Modernist brutalist concrete arches bathed in warm golden-hour sunlight against a cobalt blue sky',
     category: 'Architecture'
+  },
+  {
+    id: 'jazz-saxophonist',
+    name: 'Jazz Spotlight',
+    src: '/assets/samples/jazz-saxophonist.jpg',
+    alt: 'Low-key portrait of a jazz saxophonist illuminated by warm tungsten rim light and cool blue stage haze',
+    category: 'Portrait'
   },
   {
     id: 'cosmic-astronaut',
@@ -49,9 +77,6 @@ export const SAMPLE_IMAGES = [
 
 const imageCache = new Map();
 
-/**
- * Generates a high-contrast fallback procedural artwork if an image ever fails to load.
- */
 function createFallbackCanvas(sampleId) {
   const c = document.createElement('canvas');
   c.width = 960;

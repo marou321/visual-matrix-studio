@@ -103,38 +103,113 @@ export const GALLERY_ITEMS = [
       'Enabling the staggered hexagonal grid offsets alternating rows by half a cell—eliminating harsh horizontal banding along the curved spine of the Koi fish. Bright vermilion scales expand into full-radius dots while deep indigo water recedes into delicate pinpoints.'
   },
   {
-    id: 'botanical-aquarelle-wash',
-    title: 'Tropical Petal Aquarelle Wash',
+    id: 'venice-aquarelle-morning',
+    title: 'Venice Morning Aquarelle',
     mode: 'aquarelle',
     modeLabel: 'Aquarelle',
-    sampleId: 'botanical-macro',
+    sampleId: 'venice-canal',
     featured: true,
     settings: {
       mode: 'aquarelle',
-      cellSize: 11,
+      cellSize: 10,
       spacing: 1.0,
-      contrast: 14,
-      brightness: 12,
-      saturation: 134,
+      contrast: 16,
+      brightness: 6,
+      saturation: 126,
       background: 'warm',
       colorMode: 'rgb',
       invert: false,
       underlayOpacity: 0,
-      aquarelleSoftness: 68,
-      aquarellePigment: 96,
+      aquarelleSoftness: 56,
+      aquarellePigment: 100,
+      aquarelleRim: 72,
+      aquarelleBleed: 48,
       aquarelleDetail: 4,
       aquarellePaperGrain: true,
       spotlightMode: 'magnify'
     },
     techNotes: [
-      { label: 'Softness', value: '68% Bleed' },
-      { label: 'Pigment', value: '96%' },
+      { label: 'Softness', value: '56%' },
+      { label: 'Backrun Rim', value: '72%' },
+      { label: 'Bleed', value: '48%' },
+      { label: 'Paper', value: 'Warm Cream' },
+      { label: 'Color', value: 'True RGB' }
+    ],
+    description:
+      'Edge-preserving bilateral watercolor washes keep the warm terracotta facades cleanly separated from the turquoise Venetian canal while capillary backrun rims (72%) trace the stone bridge arches and gondola reflections across textured warm cotton paper.'
+  },
+  {
+    id: 'cathedral-cad-elevation',
+    title: 'Cathedral Architectural CAD',
+    mode: 'outline',
+    modeLabel: 'Architectural CAD',
+    sampleId: 'cathedral-facade',
+    featured: true,
+    settings: {
+      mode: 'outline',
+      cellSize: 10,
+      spacing: 1.0,
+      contrast: 26,
+      brightness: 0,
+      saturation: 105,
+      background: 'paper',
+      colorMode: 'mono',
+      invert: false,
+      underlayOpacity: 0,
+      outlineSubMode: 'cad',
+      outlineThreshold: 24,
+      outlineThickness: 1.8,
+      outlineDetail: 5,
+      outlineNoiseFilter: 3,
+      outlineCadGrid: true,
+      outlineInkStyle: 'blueprint',
+      spotlightMode: 'reveal'
+    },
+    techNotes: [
+      { label: 'Style', value: 'Arch CAD' },
+      { label: 'Interior', value: '#FFFFFF' },
+      { label: 'Detail', value: 'Level 5' },
+      { label: 'Weight', value: '1.8px 3-Tier' },
+      { label: 'Ink', value: 'Blueprint' }
+    ],
+    description:
+      'Architectural CAD mode separates the symmetrical cathedral facade into three technical line weights—bold primary stone contours, medium arches and columns, and fine hairline tracery—with orthogonal drafting snap, subtle corner overshoots, and a faint blueprint grid on pure white paper.'
+  },
+  {
+    id: 'botanical-aquarelle-wash',
+    title: 'Tropical Petal Aquarelle Wash',
+    mode: 'aquarelle',
+    modeLabel: 'Aquarelle',
+    sampleId: 'botanical-macro',
+    featured: false,
+    settings: {
+      mode: 'aquarelle',
+      cellSize: 11,
+      spacing: 1.0,
+      contrast: 14,
+      brightness: 14,
+      saturation: 132,
+      background: 'warm',
+      colorMode: 'rgb',
+      invert: false,
+      underlayOpacity: 0,
+      aquarelleSoftness: 62,
+      aquarellePigment: 98,
+      aquarelleRim: 68,
+      aquarelleBleed: 44,
+      aquarelleDetail: 4,
+      aquarellePaperGrain: true,
+      spotlightMode: 'magnify'
+    },
+    techNotes: [
+      { label: 'Softness', value: '62%' },
+      { label: 'Backrun Rim', value: '68%' },
       { label: 'Detail', value: 'Level 4' },
       { label: 'Paper', value: 'Cold-Press' },
       { label: 'Color', value: 'True RGB' }
     ],
     description:
-      'Layered translucent radial washes in Multiply blend mode let coral, hibiscus magenta, and teal pigments bloom organically across warm cold-press paper. Setting Detail to Level 4 preserves delicate capillary edge rings along overlapping petals without losing painterly softness.'
+      'Edge-preserving bilateral washes let coral, hibiscus magenta, and teal pigments bloom cleanly across warm cold-press paper without muddying overlapping petals, accented by delicate darker capillary drying rims.'
   },
   {
     id: 'koi-hollow-contour',
@@ -154,55 +229,60 @@ export const GALLERY_ITEMS = [
       colorMode: 'rgb',
       invert: false,
       underlayOpacity: 0,
+      outlineSubMode: 'normal',
       outlineThreshold: 30,
       outlineThickness: 2.4,
       outlineDetail: 3,
+      outlineNoiseFilter: 4,
       outlineInkStyle: 'rgb',
       spotlightMode: 'reveal'
     },
     techNotes: [
+      { label: 'Style', value: 'Normal Line' },
       { label: 'Interior', value: '#FFFFFF' },
       { label: 'Threshold', value: '30' },
       { label: 'Thickness', value: '2.4px' },
-      { label: 'Detail', value: 'Level 3' },
       { label: 'Ink', value: 'Real RGB' }
     ],
     description:
-      'Color-aware Sobel edge extraction with non-maximum ridge thinning traces the graceful S-curve of the Koi and surrounding water ripples while keeping every interior shape crisp pure white (#FFFFFF). Deepened real-RGB outlines preserve the vermilion and indigo palette cleanly against bright paper.'
+      'Line-first RDP simplification traces the graceful S-curve of the Koi and surrounding water ripples into clean geometric segments over a crisp pure white (#FFFFFF) interior, using deepened real-RGB outlines to retain the vermilion and indigo palette.'
   },
   {
     id: 'brutalist-hollow-ink',
-    title: 'Brutalist Minimalist Line Study',
+    title: 'Brutalist Architectural Line Study',
     mode: 'outline',
-    modeLabel: 'Hollow Outline',
+    modeLabel: 'Architectural CAD',
     sampleId: 'brutalist-sunbeam',
-    featured: true,
+    featured: false,
     settings: {
       mode: 'outline',
       cellSize: 10,
       spacing: 1.0,
-      contrast: 32,
+      contrast: 30,
       brightness: 0,
       saturation: 105,
       background: 'paper',
       colorMode: 'mono',
       invert: false,
       underlayOpacity: 0,
-      outlineThreshold: 36,
-      outlineThickness: 2.2,
+      outlineSubMode: 'cad',
+      outlineThreshold: 32,
+      outlineThickness: 2.0,
       outlineDetail: 4,
+      outlineNoiseFilter: 4,
+      outlineCadGrid: true,
       outlineInkStyle: 'ink',
       spotlightMode: 'reveal'
     },
     techNotes: [
+      { label: 'Style', value: 'Arch CAD' },
       { label: 'Interior', value: '#FFFFFF' },
-      { label: 'Threshold', value: '36' },
-      { label: 'Thickness', value: '2.2px' },
-      { label: 'Detail', value: 'Level 4' },
+      { label: 'Threshold', value: '32' },
+      { label: 'Weight', value: '2.0px 3-Tier' },
       { label: 'Ink', value: 'Studio Black' }
     ],
     description:
-      'Architectural arches and razor-sharp sunlight diagonals translate naturally into pure hollow ink drawings. A mid-high threshold (36) strips out raw concrete surface noise while preserving crisp cantilevered stairs and geometric shadow silhouettes over a pure white interior.'
+      'Modernist concrete arches and razor-sharp sunlight diagonals snap cleanly into orthogonal CAD drafting elevations with primary structural edges, delicate secondary shadow lines, and crisp 45° section hatching on pure white paper.'
   },
   {
     id: 'aurora-aquarelle-dream',

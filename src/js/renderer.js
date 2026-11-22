@@ -1,17 +1,15 @@
 /**
- * ChromaGlyph Studio — Authentic, Non-Blocking Multi-Mode Rendering Engine
+ * ChromaGlyph Studio — Authentic, Non-Blocking Multi-Mode Rendering Engine + Smart Auto-Tune
  * Modes:
- *  - binary:    0/1 character art mapped by luminance threshold (with optional Bayer 4x4 dithering)
- *  - ascii:     Multi-ramp character art mapped by optical density & real RGB or curated palettes
- *  - dots:      Halftone dot matrix with radius/opacity response and square or hexagonal grids
- *  - aquarelle: Edge-preserving bilateral watercolor washes (distinct color regions, darker backrun rims & paper tooth)
- *  - outline:   Geometric line-first contour simplification (RDP polylines + clean hollow polygon fallback on #FFFFFF)
- *
- * Anti-freeze architecture:
- *  - Intermediate caches for Aquarelle bilateral regions & Outline Sobel/NMS edge fields (< 4ms slider drags)
- *  - Zero giant Skia compound paths (strictly chunked <= 24 segments / <= 64 dots per beginPath())
- *  - Hard cell budgets for Binary, ASCII, and Dots modes
- *  - Pooled offscreen scratch canvases & AABB-culled 60fps cursor spotlight
+ *  - binary:    0/1 (or block/sparse) bitstream mapped by Otsu/threshold + Bayer 4x4 dithering
+ *  - ascii:     Multi-ramp character art with gamma curve, weight & optical density mapping
+ *  - dots:      Halftone dot matrix (circles/squares/diamonds, square/hex grids, min floor)
+ *  - aquarelle: Authentic edge-preserving bilateral watercolor washes, organic edge bleed,
+ *               distinct capillary backrun rims, pigment granulation & cold-press paper tooth
+ *  - outline:   Two sub-modes over crisp #FFFFFF interior:
+ *               * Normal Outline: RDP line-first contours + hollow geometric polygon fallback
+ *               * Architectural CAD: Multi-tier line weight hierarchy, orthogonal/45° drafting snap,
+ *                 corner overshoots, and optional faint blueprint construction grid
  */
 
 export const ASCII_RAMPS = {
@@ -69,22 +67,33 @@ export const DEFAULT_CONFIG = {
   // Binary specific
   binaryThreshold: 112,
   binaryDither: true,
+  binaryBitSet: '01',      // '01' | '1dot' | 'blocks'
+  binaryZeroOpacity: 38,   // 10..95 (%)
   // ASCII specific
   asciiRamp: 'classic',
+  asciiWeight: '700',      // '400' | '700' | '900'
+  asciiGamma: 1.0,         // 0.55..1.85
   // Dots specific
   dotStyle: 'brightness',
   dotHexGrid: false,
   dotScale: 0.92,
+  dotMinScale: 12,         // 0..40 (%)
+  dotShape: 'circle',      // 'circle' | 'square' | 'diamond'
   // Aquarelle (Watercolor) specific
-  aquarelleSoftness: 62,
-  aquarellePigment: 92,
-  aquarelleDetail: 3,
+  aquarelleSoftness: 58,   // 20..100 wash spread
+  aquarellePigment: 95,    // 35..145 pigment intensity
+  aquarelleRim: 66,        // 0..100 capillary backrun edge darkening
+  aquarelleBleed: 46,      // 0..100 organic watercolor edge bleed
+  aquarelleDetail: 3,      // 1..5 region clarity
   aquarellePaperGrain: true,
-  // Shape / Hollow Outline specific
-  outlineThreshold: 34,
-  outlineThickness: 2.2,
-  outlineDetail: 3,
-  outlineInkStyle: 'rgb',
+  // Outline (Normal + Architectural CAD) specific
+  outlineSubMode: 'normal', // 'normal' | 'cad'
+  outlineThreshold: 34,     // 10..88 edge sensitivity
+  outlineThickness: 2.2,    // 0.8..6.0 primary stroke weight
+  outlineDetail: 3,         // 1..5 detail level
+  outlineNoiseFilter: 4,    // 1..10 min segment length / speckle filter
+  outlineCadGrid: true,     // CAD faint construction grid & drafting overshoots
+  outlineInkStyle: 'rgb',   // 'rgb' | 'ink' | 'blueprint' | 'palette'
   // Interactive spotlight
   spotlightMode: 'magnify',
   spotlightRadius: 115
@@ -112,7 +121,7 @@ function getScratchCanvas(key, w, h) {
   return c;
 }
 
-// Intermediate caches for responsive, non-blocking slider updates
+// Single-slot intermediate caches for responsive, non-blocking slider updates
 let outlineEdgeCache = null;
 let aquarelleRegionCache = null;
 
@@ -179,6 +188,262 @@ function mapPaletteColor(r, g, b, lum, palette, isLightBg) {
   }
 }
 
+/**
+ * Analyzes an image's luminance distribution, Otsu threshold, dynamic range,
+ * color saturation, border brightness, and edge density in < 3ms.
+ */
+export function analyzeImageMetrics(source) {
+  const w = 96;
+  const h = 72;
+  const c = getScratchCanvas('metrics-sample', w, h);
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(source, 0, 0, w, h);
+  const data = ctx.getImageData(0, 0, w, h).data;
+
+  const total = w * h;
+  const luma = new Float32Array(total);
+  const hist = new Uint32Array(256);
+  let sumL = 0;
+  let sumSat = 0;
+  let sumWarmth = 0;
+  let borderSum = 0;
+  let borderCnt = 0;
+
+  for (let y = 0; y < h; y++) {
+    const isBorderY = y === 0 || y === h - 1;
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      const p = i * 4;
+      const r = data[p];
+      const g = data[p + 1];
+      const b = data[p + 2];
+      const l = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      luma[i] = l;
+      const bin = l >= 255 ? 255 : l | 0;
+      hist[bin]++;
+      sumL += l;
+      sumWarmth += (r - b) / 255;
+
+      const maxC = r > g ? (r > b ? r : b) : (g > b ? g : b);
+      const minC = r < g ? (r < b ? r : b) : (g < b ? g : b);
+      sumSat += maxC > 8 ? (maxC - minC) / maxC : 0;
+
+      if (isBorderY || x === 0 || x === w - 1) {
+        borderSum += l;
+        borderCnt++;
+      }
+    }
+  }
+
+  // Percentiles (p10, p50, p90)
+  let acc = 0;
+  let p10 = 20;
+  let p50 = 128;
+  let p90 = 235;
+  let got10 = false;
+  let got50 = false;
+  for (let b = 0; b < 256; b++) {
+    acc += hist[b];
+    if (!got10 && acc >= total * 0.1) { p10 = b; got10 = true; }
+    if (!got50 && acc >= total * 0.5) { p50 = b; got50 = true; }
+    if (acc >= total * 0.9) { p90 = b; break; }
+  }
+
+  // Otsu's optimal bimodal luminance threshold
+  let totalWeighted = 0;
+  for (let b = 0; b < 256; b++) totalWeighted += b * hist[b];
+  let sumB = 0;
+  let wB = 0;
+  let maxBetween = -1;
+  let otsuThreshold = 118;
+  for (let b = 0; b < 256; b++) {
+    wB += hist[b];
+    if (wB === 0) continue;
+    const wF = total - wB;
+    if (wF === 0) break;
+    sumB += b * hist[b];
+    const mB = sumB / wB;
+    const mF = (totalWeighted - sumB) / wF;
+    const between = wB * wF * (mB - mF) * (mB - mF);
+    if (between > maxBetween) {
+      maxBetween = between;
+      otsuThreshold = b;
+    }
+  }
+
+  // Edge density via fast Sobel scan
+  let strongEdges = 0;
+  let innerCnt = 0;
+  for (let y = 1; y < h - 1; y++) {
+    const ro = y * w;
+    for (let x = 1; x < w - 1; x++) {
+      const i = ro + x;
+      const gx = -luma[i - w - 1] + luma[i - w + 1] - 2 * luma[i - 1] + 2 * luma[i + 1] - luma[i + w - 1] + luma[i + w + 1];
+      const gy = -luma[i - w - 1] - 2 * luma[i - w] - luma[i - w + 1] + luma[i + w - 1] + 2 * luma[i + w] + luma[i + w + 1];
+      if (Math.sqrt(gx * gx + gy * gy) * 0.25 > 24) strongEdges++;
+      innerCnt++;
+    }
+  }
+
+  return {
+    meanLuma: sumL / total,
+    p10,
+    p50,
+    p90,
+    dynamicRange: Math.max(1, p90 - p10),
+    meanSat: sumSat / total,
+    warmth: sumWarmth / total,
+    borderLuma: borderSum / Math.max(1, borderCnt),
+    edgeDensity: strongEdges / Math.max(1, innerCnt),
+    otsuThreshold
+  };
+}
+
+/**
+ * Computes balanced, image-aware "Best Parameters" for the active rendering mode.
+ */
+export function computeBestParameters(source, mode, currentConfig = DEFAULT_CONFIG) {
+  const m = analyzeImageMetrics(source);
+  const isBrightKey = m.borderLuma > 158 || m.meanLuma > 160;
+  const isDarkKey = m.meanLuma < 86;
+  const isHighDetail = m.edgeDensity > 0.2;
+  const isLowContrast = m.dynamicRange < 128;
+  const isColorful = m.meanSat > 0.28;
+
+  const baseContrast = isLowContrast ? 30 : m.dynamicRange < 175 ? 20 : 12;
+  const baseBrightness = isDarkKey ? 12 : isBrightKey ? -4 : 4;
+  const baseSat = isColorful ? 122 : m.meanSat < 0.14 ? 105 : 132;
+
+  if (mode === 'binary') {
+    const threshold = Math.round(Math.max(48, Math.min(205, m.otsuThreshold * 0.72 + m.p50 * 0.28)));
+    return {
+      patch: {
+        cellSize: isHighDetail ? 8 : 10,
+        spacing: 1.0,
+        contrast: Math.min(40, baseContrast + 8),
+        brightness: baseBrightness,
+        saturation: Math.min(148, baseSat + 8),
+        background: isBrightKey ? 'paper' : 'obsidian',
+        colorMode: isColorful ? 'rgb' : 'vibrant',
+        invert: false,
+        underlayOpacity: 0,
+        binaryThreshold: threshold,
+        binaryDither: m.dynamicRange < 155 || isHighDetail,
+        binaryBitSet: '01',
+        binaryZeroOpacity: isBrightKey ? 44 : 34
+      },
+      summary: `Otsu threshold ${threshold}, ${isHighDetail ? '8px fine' : '10px'} grid, ${isBrightKey ? 'Paper' : 'Obsidian'} backdrop`
+    };
+  }
+
+  if (mode === 'ascii') {
+    const gamma = isDarkKey ? 0.82 : isBrightKey ? 1.18 : 1.0;
+    const ramp = isHighDetail ? 'extended' : m.edgeDensity < 0.1 ? 'blocks' : 'classic';
+    return {
+      patch: {
+        cellSize: isHighDetail ? 8 : 9,
+        spacing: isHighDetail ? 0.95 : 1.0,
+        contrast: baseContrast + 4,
+        brightness: baseBrightness,
+        saturation: baseSat,
+        background: isBrightKey ? 'paper' : 'obsidian',
+        colorMode: isColorful ? 'rgb' : 'vibrant',
+        invert: false,
+        underlayOpacity: 0,
+        asciiRamp: ramp,
+        asciiWeight: isBrightKey ? '700' : '700',
+        asciiGamma: Number(gamma.toFixed(2))
+      },
+      summary: `${ramp} ramp, gamma ${gamma.toFixed(2)}, ${isHighDetail ? '8px' : '9px'} grid`
+    };
+  }
+
+  if (mode === 'dots') {
+    return {
+      patch: {
+        cellSize: isHighDetail ? 9 : 11,
+        spacing: 1.05,
+        contrast: baseContrast + 6,
+        brightness: isBrightKey ? -2 : Math.max(2, baseBrightness),
+        saturation: Math.min(145, baseSat + 6),
+        background: isBrightKey ? 'paper' : 'obsidian',
+        colorMode: 'rgb',
+        invert: false,
+        underlayOpacity: 0,
+        dotStyle: isBrightKey ? 'darkness' : m.edgeDensity < 0.14 ? 'opacity' : 'brightness',
+        dotHexGrid: true,
+        dotScale: 0.95,
+        dotMinScale: isBrightKey ? 6 : 12,
+        dotShape: 'circle'
+      },
+      summary: `${isBrightKey ? 'Print Ink (Paper)' : 'Luminous Hex-Dots'}, ${isHighDetail ? '9px' : '11px'} pitch`
+    };
+  }
+
+  if (mode === 'aquarelle') {
+    // Authentic luminous watercolor tuning tailored to subject warmth, key, and detail
+    const softness = isHighDetail ? 46 : m.edgeDensity < 0.13 ? 70 : 58;
+    const rim = isHighDetail ? 68 : 74;
+    const bleed = isHighDetail ? 36 : 54;
+    const detail = isHighDetail ? 4 : 3;
+    const paperBg = m.warmth > 0.02 ? 'warm' : 'paper';
+    return {
+      patch: {
+        cellSize: 10,
+        spacing: 1.0,
+        contrast: isLowContrast ? 22 : 14,
+        brightness: isDarkKey ? 22 : isBrightKey ? 2 : 10,
+        saturation: isColorful ? 128 : 136,
+        background: paperBg,
+        colorMode: 'rgb',
+        invert: false,
+        underlayOpacity: 0,
+        aquarelleSoftness: softness,
+        aquarellePigment: isDarkKey ? 90 : 102,
+        aquarelleRim: rim,
+        aquarelleBleed: bleed,
+        aquarelleDetail: detail,
+        aquarellePaperGrain: true
+      },
+      summary: `${paperBg === 'warm' ? 'Warm Cream' : 'White'} paper, ${softness}% softness, ${rim}% backrun rim, Level ${detail} detail`
+    };
+  }
+
+  // Outline mode (respects active sub-mode: Normal Outline vs Architectural CAD)
+  const isCad = currentConfig.outlineSubMode === 'cad';
+  const threshold = isCad
+    ? (isHighDetail ? 26 : 22)
+    : (isHighDetail ? 38 : isLowContrast ? 26 : 32);
+  const detail = isCad ? (isHighDetail ? 5 : 4) : (isHighDetail ? 4 : 3);
+  const thickness = isCad ? 1.8 : (isHighDetail ? 2.0 : 2.5);
+  const noiseFilter = isCad ? 3 : (isHighDetail ? 4 : 5);
+  const inkStyle = isCad
+    ? (isColorful && m.meanSat > 0.35 ? 'blueprint' : 'ink')
+    : (isColorful ? 'rgb' : 'ink');
+
+  return {
+    patch: {
+      contrast: isLowContrast ? 32 : 22,
+      brightness: isDarkKey ? 8 : 0,
+      saturation: isColorful ? 126 : 108,
+      background: 'paper',
+      colorMode: 'rgb',
+      invert: false,
+      underlayOpacity: 0,
+      outlineSubMode: isCad ? 'cad' : 'normal',
+      outlineThreshold: threshold,
+      outlineThickness: thickness,
+      outlineDetail: detail,
+      outlineNoiseFilter: noiseFilter,
+      outlineCadGrid: true,
+      outlineInkStyle: inkStyle
+    },
+    summary: `${isCad ? 'Architectural CAD' : 'Normal Outline'} on #FFFFFF, threshold ${threshold}, ${thickness}px ${inkStyle} ink`
+  };
+}
+
 function smoothField(srcR, srcG, srcB, w, h, radius) {
   if (radius <= 0) return { r: srcR, g: srcG, b: srcB };
   const len = w * h;
@@ -238,7 +503,6 @@ function smoothField(srcR, srcG, srcB, w, h, radius) {
 
 /**
  * Fast separable edge-preserving bilateral filter (rational range kernel — zero Math.exp calls).
- * Smooths interior watercolor regions into clean flat washes WITHOUT bleeding/mushing across color edges!
  */
 function bilateralWashFilter(srcR, srcG, srcB, w, h, radius, colorSigma) {
   const len = w * h;
@@ -250,7 +514,6 @@ function bilateralWashFilter(srcR, srcG, srcB, w, h, radius, colorSigma) {
   const outG = new Float32Array(len);
   const outB = new Float32Array(len);
 
-  // Horizontal edge-preserving pass
   for (let y = 0; y < h; y++) {
     const rowOff = y * w;
     for (let x = 0; x < w; x++) {
@@ -270,8 +533,7 @@ function bilateralWashFilter(srcR, srcG, srcB, w, h, radius, colorSigma) {
         const dr = srcR[i] - cr;
         const dg = srcG[i] - cg;
         const db = srcB[i] - cb;
-        const dist2 = dr * dr + dg * dg + db * db;
-        const weight = 1 / (1 + dist2 * invSigma2);
+        const weight = 1 / (1 + (dr * dr + dg * dg + db * db) * invSigma2);
         sr += srcR[i] * weight;
         sg += srcG[i] * weight;
         sb += srcB[i] * weight;
@@ -283,7 +545,6 @@ function bilateralWashFilter(srcR, srcG, srcB, w, h, radius, colorSigma) {
     }
   }
 
-  // Vertical edge-preserving pass
   for (let y = 0; y < h; y++) {
     const y0 = y - radius < 0 ? 0 : y - radius;
     const y1 = y + radius >= h ? h - 1 : y + radius;
@@ -303,8 +564,7 @@ function bilateralWashFilter(srcR, srcG, srcB, w, h, radius, colorSigma) {
         const dr = tmpR[i] - cr;
         const dg = tmpG[i] - cg;
         const db = tmpB[i] - cb;
-        const dist2 = dr * dr + dg * dg + db * db;
-        const weight = 1 / (1 + dist2 * invSigma2);
+        const weight = 1 / (1 + (dr * dr + dg * dg + db * db) * invSigma2);
         sr += tmpR[i] * weight;
         sg += tmpG[i] * weight;
         sb += tmpB[i] * weight;
@@ -319,26 +579,26 @@ function bilateralWashFilter(srcR, srcG, srcB, w, h, radius, colorSigma) {
   return { r: outR, g: outG, b: outB };
 }
 
-// Fast deterministic cold-press watercolor paper tooth table (64x64 tiled via bitwise mask)
+// Cold-press 300gsm watercolor cotton paper texture table (64x64 tiled via bitwise mask)
 const PAPER_NOISE_64 = (() => {
   const arr = new Int8Array(64 * 64);
   const rand = mulberry32(42197);
   for (let y = 0; y < 64; y++) {
     for (let x = 0; x < 64; x++) {
-      const fiber = Math.sin(x * 0.29 + y * 0.11) * 4 + Math.cos(y * 0.31 - x * 0.09) * 3;
-      const tooth = (rand() - 0.5) * 16;
-      arr[(y << 6) | x] = Math.round(fiber + tooth);
+      const weave = Math.sin(x * 0.34 + y * 0.13) * 4.5 + Math.cos(y * 0.36 - x * 0.11) * 3.5;
+      const tooth = (rand() - 0.5) * 18;
+      arr[(y << 6) | x] = Math.round(weave + tooth);
     }
   }
   return arr;
 })();
 
 /**
- * Authentic Aquarelle (Watercolor) Rendering Mode
- * - Edge-preserving bilateral filtering keeps distinct color regions crisp (zero muddy over-fusion!)
- * - Soft tonal glaze quantization gives genuine layered watercolor wash clarity
- * - True capillary backrun rim darkening accumulates along drying wash edges
- * - Cold-press paper grain & boundary-aware subtle pigment accents stay fast (< 10ms)
+ * Deeper Authentic Aquarelle (Watercolor) Mode
+ * - Multi-pass edge-preserving bilateral washes (distinct separated color regions, zero muddy mush)
+ * - Subtle organic paper-fiber edge wicking / bleed (aquarelleBleed)
+ * - Prominent authentic watercolor capillary backrun rim darkening (aquarelleRim)
+ * - Paper-valley pigment granulation + reserved white paper highlights + cold-press tooth
  */
 function renderAquarelle(
   source,
@@ -360,6 +620,8 @@ function renderAquarelle(
 
   const softnessNorm = Math.max(0, Math.min(1, (cfg.aquarelleSoftness - 20) / 80));
   const pigmentNorm = Math.max(0.35, Math.min(1.5, cfg.aquarellePigment / 100));
+  const rimNorm = Math.max(0, Math.min(1, (cfg.aquarelleRim ?? 66) / 100));
+  const bleedNorm = Math.max(0, Math.min(1, (cfg.aquarelleBleed ?? 46) / 100));
   const detailLevel = Math.max(1, Math.min(5, Math.round(cfg.aquarelleDetail)));
   const isDraft = Boolean(options.isDraft);
 
@@ -367,13 +629,12 @@ function renderAquarelle(
   const targetW = isDraft
     ? Math.min(180, 120 + detailLevel * 12)
     : options.exportScale > 1
-    ? Math.min(420, 240 + detailLevel * 36)
-    : Math.min(280, 160 + detailLevel * 24);
+    ? Math.min(440, 260 + detailLevel * 36)
+    : Math.min(300, 170 + detailLevel * 26);
   const w = Math.max(80, Math.min(outWidth, targetW));
   const h = Math.max(60, Math.round(w * aspect));
   const len = w * h;
 
-  // Bucket softness into 5 clean steps for instant cache hits during Pigment/Paper slider drags
   const softnessStep = Math.round(softnessNorm * 4);
   const cacheHit =
     aquarelleRegionCache &&
@@ -393,10 +654,7 @@ function renderAquarelle(
   let rimStrength;
 
   if (cacheHit) {
-    wR = aquarelleRegionCache.wR;
-    wG = aquarelleRegionCache.wG;
-    wB = aquarelleRegionCache.wB;
-    rimStrength = aquarelleRegionCache.rimStrength;
+    ({ wR, wG, wB, rimStrength } = aquarelleRegionCache);
   } else {
     const sCanvas = getScratchCanvas('aq-raw', w, h);
     const sCtx = sCanvas.getContext('2d', { willReadFrequently: true });
@@ -426,19 +684,19 @@ function renderAquarelle(
       srcB[i] = cb;
     }
 
-    // Edge-preserving bilateral passes: flatten interior washes while keeping distinct color boundaries sharp!
+    // Two crisp edge-preserving bilateral passes create true flat watercolor regions without mushing borders
     const radius = softnessStep >= 3 ? 2 : 1;
-    const colorSigma = 28 + softnessStep * 9; // Strict enough to keep orange/indigo or cyan/magenta cleanly separated
-    const pass1 = bilateralWashFilter(srcR, srcG, srcB, w, h, radius, colorSigma);
-    const finalPass = !isDraft && softnessStep >= 2
-      ? bilateralWashFilter(pass1.r, pass1.g, pass1.b, w, h, 1, colorSigma * 0.85)
-      : pass1;
+    const colorSigma = 24 + softnessStep * 8;
+    const p1 = bilateralWashFilter(srcR, srcG, srcB, w, h, radius, colorSigma);
+    const p2 = !isDraft
+      ? bilateralWashFilter(p1.r, p1.g, p1.b, w, h, 1, colorSigma * 0.85)
+      : p1;
 
-    wR = finalPass.r;
-    wG = finalPass.g;
-    wB = finalPass.b;
+    wR = p2.r;
+    wG = p2.g;
+    wB = p2.b;
 
-    // Precompute capillary backrun / pigment-edge accumulation along wash region boundaries
+    // Detect pigment drying boundary rims (capillary backrun zones along color shifts)
     rimStrength = new Float32Array(len);
     for (let y = 1; y < h - 1; y++) {
       const rowOff = y * w;
@@ -451,8 +709,8 @@ function renderAquarelle(
         const dgY = wG[i + w] - wG[i - w];
         const dbY = wB[i + w] - wB[i - w];
         const grad = Math.sqrt(drX * drX + dgX * dgX + dbX * dbX + drY * drY + dgY * dgY + dbY * dbY);
-        if (grad > 28) {
-          rimStrength[i] = Math.min(1, (grad - 28) / 115);
+        if (grad > 22) {
+          rimStrength[i] = Math.min(1, (grad - 22) / 96);
         }
       }
     }
@@ -474,34 +732,46 @@ function renderAquarelle(
     };
   }
 
-  // Paper base color
-  const paperR = bgSpec.hex === '#f7f2e8' ? 248 : bgSpec.light ? 255 : 10;
-  const paperG = bgSpec.hex === '#f7f2e8' ? 243 : bgSpec.light ? 255 : 14;
-  const paperB = bgSpec.hex === '#f7f2e8' ? 233 : bgSpec.light ? 255 : 22;
+  const paperR = bgSpec.hex === '#f7f2e8' ? 249 : bgSpec.light ? 255 : 10;
+  const paperG = bgSpec.hex === '#f7f2e8' ? 244 : bgSpec.light ? 255 : 14;
+  const paperB = bgSpec.hex === '#f7f2e8' ? 234 : bgSpec.light ? 255 : 22;
 
   const washCanvas = getScratchCanvas('aq-wash', w, h);
   const wCtx = washCanvas.getContext('2d');
   const outImg = wCtx.createImageData(w, h);
   const outD = outImg.data;
 
-  // Soft tonal step quantization gives distinct hand-painted watercolor wash tiers without harsh posterization
-  const glazeLevels = Math.max(5, Math.round(11 - softnessNorm * 4));
-  const quantBlend = 0.24 + softnessNorm * 0.22;
-  const washOpacity = Math.min(0.96, 0.56 + pigmentNorm * 0.3);
-  const paperLift = bgSpec.light ? 16 + softnessNorm * 10 : 0;
-  const chromaBoost = 1.08 + pigmentNorm * 0.14;
+  // Watercolor glaze tiers + organic paper-wicking bleed + capillary backrun rim
+  const glazeLevels = Math.max(4, Math.round(10 - softnessNorm * 4));
+  const quantBlend = 0.28 + softnessNorm * 0.24;
+  const washOpacity = Math.min(0.95, 0.52 + pigmentNorm * 0.32);
+  const paperLift = bgSpec.light ? 18 + softnessNorm * 10 : 0;
+  const chromaBoost = 1.1 + pigmentNorm * 0.16;
   const useGrain = cfg.aquarellePaperGrain;
+  const bleedAmp = bleedNorm * 1.8;
 
   for (let y = 0; y < h; y++) {
-    const rowOff = y * w;
     const ny = (y & 63) << 6;
+    const sinY = Math.sin(y * 0.21);
     for (let x = 0; x < w; x++) {
-      const i = rowOff + x;
-      let r = wR[i];
-      let g = wG[i];
-      let b = wB[i];
+      // Subtle organic watercolor edge wobble along cotton paper fibers (zero cross-region muddiness!)
+      let sx = x;
+      let sy = y;
+      if (bleedAmp > 0.15) {
+        const wobbleX = Math.round((sinY + Math.cos((x + y) * 0.11)) * 0.5 * bleedAmp);
+        const wobbleY = Math.round((Math.cos(x * 0.19) - Math.sin((x - y) * 0.13)) * 0.5 * bleedAmp);
+        sx = x + wobbleX;
+        sy = y + wobbleY;
+        if (sx < 0) sx = 0; else if (sx >= w) sx = w - 1;
+        if (sy < 0) sy = 0; else if (sy >= h) sy = h - 1;
+      }
 
-      // Soft watercolor tonal quantization (preserves distinct color shapes & crisp midtone clarity)
+      const si = sy * w + sx;
+      let r = wR[si];
+      let g = wG[si];
+      let b = wB[si];
+
+      // Distinct hand-painted watercolor wash tiers
       const qr = Math.round((r / 255) * glazeLevels) * (255 / glazeLevels);
       const qg = Math.round((g / 255) * glazeLevels) * (255 / glazeLevels);
       const qb = Math.round((b / 255) * glazeLevels) * (255 / glazeLevels);
@@ -509,41 +779,44 @@ function renderAquarelle(
       g = g * (1 - quantBlend) + qg * quantBlend;
       b = b * (1 - quantBlend) + qb * quantBlend;
 
-      // Boost pigment clarity and gently lift deep shadows on cotton paper
+      // Luminous translucent pigment tone on cotton paper
       const luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-      r = clamp255(paperLift + (luma + (r - luma) * chromaBoost) * (bgSpec.light ? 0.92 : 1));
-      g = clamp255(paperLift + (luma + (g - luma) * chromaBoost) * (bgSpec.light ? 0.92 : 1));
-      b = clamp255(paperLift + (luma + (b - luma) * chromaBoost) * (bgSpec.light ? 0.94 : 1));
+      r = clamp255(paperLift + (luma + (r - luma) * chromaBoost) * (bgSpec.light ? 0.91 : 1));
+      g = clamp255(paperLift + (luma + (g - luma) * chromaBoost) * (bgSpec.light ? 0.91 : 1));
+      b = clamp255(paperLift + (luma + (b - luma) * chromaBoost) * (bgSpec.light ? 0.93 : 1));
 
-      // Authentic capillary backrun effect: pigment accumulates & slightly darkens/saturates at wash edges
-      const rim = rimStrength[i];
-      if (rim > 0) {
-        const rimFactor = 1 - rim * Math.min(0.32, 0.18 * pigmentNorm + 0.06);
+      // Capillary backrun darkening + chromatic concentration right along wash edges
+      const rim = rimStrength[si];
+      if (rim > 0 && rimNorm > 0.02) {
+        const backrun = rim * rimNorm;
+        const darken = Math.max(0.56, 1 - backrun * (0.28 + pigmentNorm * 0.14));
         const rimLuma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-        r = clamp255((rimLuma + (r - rimLuma) * (1 + rim * 0.22)) * rimFactor);
-        g = clamp255((rimLuma + (g - rimLuma) * (1 + rim * 0.22)) * rimFactor);
-        b = clamp255((rimLuma + (b - rimLuma) * (1 + rim * 0.22)) * rimFactor);
+        const rimSat = 1 + backrun * 0.34;
+        r = clamp255((rimLuma + (r - rimLuma) * rimSat) * darken);
+        g = clamp255((rimLuma + (g - rimLuma) * rimSat) * darken);
+        b = clamp255((rimLuma + (b - rimLuma) * rimSat) * darken);
       }
 
-      // Subtle watercolor wash density variation inside regions (gentle paper granulation, zero muddiness)
+      // Authentic pigment granulation inside paper valleys + reserved bright paper highlights
       const grainVal = PAPER_NOISE_64[ny | (x & 63)];
-      const granulation = useGrain ? 1 + grainVal * 0.0045 : 1;
-      // Reserve bright paper highlights cleanly like real watercolor
-      const highlightFade = bgSpec.light && luma > 224 ? Math.max(0, (255 - luma) / 31) : 1;
-      const a = Math.max(0, Math.min(1, washOpacity * highlightFade * granulation));
+      const granulation = useGrain ? 1 - grainVal * 0.0085 : 1;
+      const highlightFade = bgSpec.light && luma > 220 ? Math.max(0, (255 - luma) / 35) : 1;
+      // Optical water-pool density variation inside large washes
+      const poolWave = 1 + Math.sin(x * 0.09 + y * 0.07) * 0.055 * softnessNorm;
+      const a = Math.max(0, Math.min(1, washOpacity * highlightFade * granulation * poolWave));
 
       let fr = paperR * (1 - a) + r * a;
       let fg = paperG * (1 - a) + g * a;
       let fb = paperB * (1 - a) + b * a;
 
       if (useGrain) {
-        const tooth = grainVal * (bgSpec.light ? 0.72 : 0.35);
+        const tooth = grainVal * (bgSpec.light ? 0.78 : 0.32);
         fr = clamp255(fr + tooth);
         fg = clamp255(fg + tooth);
         fb = clamp255(fb + tooth);
       }
 
-      const p = i * 4;
+      const p = (y * w + x) * 4;
       outD[p] = fr;
       outD[p + 1] = fg;
       outD[p + 2] = fb;
@@ -568,14 +841,14 @@ function renderAquarelle(
     ctx.restore();
   }
 
-  // Stage 2: Boundary-respecting subtle watercolor bloom accents (ONLY inside calm regions, never mushing across borders!)
+  // Stage 2: Subtle interior translucent watercolor blooms (respecting color borders + capillary drying rings!)
   const rand = mulberry32(133791);
   const cells = options.skipCells ? null : [];
   const dabCols = isDraft ? 10 : Math.min(16, 10 + detailLevel);
   const dabRows = Math.max(7, Math.round(dabCols * aspect));
   const stepX = outWidth / dabCols;
   const stepY = outHeight / dabRows;
-  const dabAlpha = Math.min(0.16, 0.065 * pigmentNorm + 0.03);
+  const dabAlpha = Math.min(0.18, 0.07 * pigmentNorm + 0.035);
 
   ctx.save();
   for (let gy = 0; gy < dabRows; gy++) {
@@ -584,27 +857,27 @@ function renderAquarelle(
       const sy = Math.min(h - 1, Math.floor(((gy + 0.5) / dabRows) * h));
       const si = sy * w + sx;
 
-      // Skip dabs directly straddling strong region borders so distinct colors NEVER mush together
-      if (rimStrength[si] > 0.35) continue;
+      // Never smear across strong region borders
+      if (rimStrength[si] > 0.3) continue;
 
       const cr = Math.round(wR[si]);
       const cg = Math.round(wG[si]);
       const cb = Math.round(wB[si]);
       const lum = 0.2126 * cr + 0.7152 * cg + 0.0722 * cb;
-      if (bgSpec.light && lum > 232) continue;
+      if (bgSpec.light && lum > 228) continue;
 
       const cx = (gx + 0.5) * stepX + (rand() - 0.5) * stepX * 0.35;
       const cy = (gy + 0.5) * stepY + (rand() - 0.5) * stepY * 0.35;
-      const r = ((stepX + stepY) * 0.5) * (0.48 + softnessNorm * 0.28) * (0.8 + rand() * 0.35);
+      const r = ((stepX + stepY) * 0.5) * (0.42 + softnessNorm * 0.26) * (0.8 + rand() * 0.35);
 
       ctx.fillStyle = `rgba(${cr},${cg},${cb},${dabAlpha.toFixed(2)})`;
       ctx.beginPath();
       ctx.arc(cx, cy, r, 0, Math.PI * 2);
       ctx.fill();
 
-      // Delicate capillary rim on occasional blooms
-      if (!isDraft && rand() > 0.65) {
-        ctx.strokeStyle = `rgba(${Math.round(cr * 0.74)},${Math.round(cg * 0.74)},${Math.round(cb * 0.74)},${(dabAlpha * 0.65).toFixed(2)})`;
+      if (!isDraft && rimNorm > 0.15 && rand() > 0.56) {
+        const rimAlpha = Math.min(0.22, dabAlpha * (0.55 + rimNorm * 0.85));
+        ctx.strokeStyle = `rgba(${Math.round(cr * 0.7)},${Math.round(cg * 0.7)},${Math.round(cb * 0.7)},${rimAlpha.toFixed(2)})`;
         ctx.lineWidth = Math.max(0.8, 1.15 * scaleMultiplier);
         ctx.beginPath();
         ctx.arc(cx, cy, r * 0.92, 0, Math.PI * 2);
@@ -636,8 +909,7 @@ function renderAquarelle(
 }
 
 /**
- * Ramer–Douglas–Peucker (RDP) Polyline Simplification
- * Converts traced pixel chains into clean, crisp straight geometric line segments.
+ * Iterative Ramer–Douglas–Peucker (RDP) Polyline Simplification
  */
 function simplifyPolylineRDP(pts, epsilon) {
   const n = pts.length;
@@ -647,7 +919,6 @@ function simplifyPolylineRDP(pts, epsilon) {
   keep[0] = 1;
   keep[n - 1] = 1;
 
-  // Iterative stack avoids recursion overhead
   const stack = [[0, n - 1]];
   while (stack.length > 0) {
     const [start, end] = stack.pop();
@@ -695,11 +966,10 @@ function simplifyPolylineRDP(pts, epsilon) {
 }
 
 /**
- * Geometric Shape / Line-First Outline Rendering Mode (Pure White #FFFFFF Interior)
- * 1. Cached color-aware Sobel + 8-way NMS edge map
- * 2. Linear chain tracing + Ramer–Douglas–Peucker (RDP) simplification -> crisp straight line segments first
- * 3. Clean hollow geometric polygon/segment fallback in regions where subject structure exists but clear edges are scarce
- * 4. Chunked drawing (<= 24 segments per beginPath()) -> crisp vector lines with zero Skia path freezes!
+ * Outline Mode — Supports Two Sub-Modes Over Pure White (#FFFFFF) Interior:
+ *  1. Normal Outline ('normal'): RDP straight line-first contours + hollow geometric polygon fallback
+ *  2. Architectural CAD ('cad'): Multi-tier technical line-weight hierarchy (primary/secondary/hairline),
+ *     orthogonal & 45° drafting snap, architectural corner overshoots, and optional faint blueprint grid
  */
 function renderOutline(
   source,
@@ -719,7 +989,7 @@ function renderOutline(
   baseCanvas.height = outHeight;
   const ctx = baseCanvas.getContext('2d');
 
-  // Always keep interior crisp pure white (#FFFFFF) so geometric line structure stands out cleanly
+  const isCad = cfg.outlineSubMode === 'cad';
   const isWarm = cfg.background === 'warm';
   const interiorHex = isWarm ? '#faf8f4' : '#ffffff';
   ctx.fillStyle = interiorHex;
@@ -736,16 +1006,17 @@ function renderOutline(
   const isDraft = Boolean(options.isDraft);
   const aspect = outHeight / outWidth;
 
+  // CAD gets slightly finer contour resolution while still staying fast & non-blocking
+  const cadBonus = isCad ? 36 : 0;
   const targetW = isDraft
-    ? Math.min(200, 120 + detail * 16)
+    ? Math.min(220, 125 + detail * 16 + (isCad ? 16 : 0))
     : options.exportScale > 1
-    ? Math.min(400, 200 + detail * 40)
-    : Math.min(310, 150 + detail * 32);
+    ? Math.min(440, 210 + detail * 42 + cadBonus)
+    : Math.min(340, 155 + detail * 32 + cadBonus);
   const w = Math.max(80, Math.min(outWidth, targetW));
   const h = Math.max(60, Math.round(w * aspect));
   const len = w * h;
 
-  // Step 1: Cached Sobel + 8-way NMS edge map (slider drags on Threshold/Thickness/Ink hit cache in < 2ms!)
   let edgeStrength;
   let fR;
   let fG;
@@ -806,7 +1077,6 @@ function renderOutline(
       fL[i] = 0.2126 * fR[i] + 0.7152 * fG[i] + 0.0722 * fB[i];
     }
 
-    // Estimate perimeter background color so geometric fallback only activates on real subject regions
     let bR = 0;
     let bG = 0;
     let bB = 0;
@@ -928,10 +1198,39 @@ function renderOutline(
     };
   }
 
-  // Step 2: Hysteresis edge mask -> Linear chain tracing -> RDP Straight-Line Simplification
+  // Optional crisp faint architectural CAD drafting grid & sheet frame on white paper
+  if (isCad && cfg.outlineCadGrid) {
+    ctx.save();
+    const gridPitch = Math.max(28, Math.round(44 * scaleMultiplier));
+    ctx.strokeStyle = cfg.outlineInkStyle === 'blueprint'
+      ? 'rgba(30, 64, 175, 0.08)'
+      : 'rgba(100, 116, 139, 0.11)';
+    ctx.lineWidth = Math.max(0.6, 0.75 * scaleMultiplier);
+    ctx.beginPath();
+    for (let gx = gridPitch; gx < outWidth; gx += gridPitch) {
+      ctx.moveTo(gx, 0);
+      ctx.lineTo(gx, outHeight);
+    }
+    for (let gy = gridPitch; gy < outHeight; gy += gridPitch) {
+      ctx.moveTo(0, gy);
+      ctx.lineTo(outWidth, gy);
+    }
+    ctx.stroke();
+
+    // Subtle technical drawing sheet border + corner registration crosshairs
+    const margin = Math.round(14 * scaleMultiplier);
+    ctx.strokeStyle = cfg.outlineInkStyle === 'blueprint'
+      ? 'rgba(30, 64, 175, 0.24)'
+      : 'rgba(51, 65, 85, 0.24)';
+    ctx.lineWidth = Math.max(0.8, 1.0 * scaleMultiplier);
+    ctx.strokeRect(margin, margin, outWidth - margin * 2, outHeight - margin * 2);
+    ctx.restore();
+  }
+
+  // Dual-threshold hysteresis edge mask (CAD captures finer secondary & hairline structural edges)
   const sliderNorm = Math.max(0.05, Math.min(0.95, cfg.outlineThreshold / 100));
-  const threshold = Math.max(7, p97 * (0.22 + sliderNorm * 0.92));
-  const softFloor = threshold * 0.48;
+  const threshold = Math.max(6, p97 * ((isCad ? 0.16 : 0.22) + sliderNorm * (isCad ? 0.78 : 0.92)));
+  const softFloor = threshold * (isCad ? 0.42 : 0.48);
 
   const active = new Uint8Array(len);
   for (let y = 1; y < h - 1; y++) {
@@ -953,6 +1252,7 @@ function renderOutline(
 
   const getContourColor = (i) => {
     if (cfg.outlineInkStyle === 'ink') return [15, 23, 42];
+    if (cfg.outlineInkStyle === 'blueprint') return [23, 58, 140];
     if (cfg.outlineInkStyle === 'palette') {
       const [pr, pg, pb] = mapPaletteColor(fR[i], fG[i], fB[i], fL[i], cfg.colorMode, true);
       return [Math.round(pr * 0.68), Math.round(pg * 0.68), Math.round(pb * 0.68)];
@@ -967,7 +1267,6 @@ function renderOutline(
     ];
   };
 
-  // Track which macro-tiles already have strong geometric line coverage (for clean shape fallback)
   const tileCols = 10;
   const tileRows = Math.max(6, Math.round(tileCols * aspect));
   const tileLineCounts = new Uint16Array(tileCols * tileRows);
@@ -978,14 +1277,19 @@ function renderOutline(
     [-1, 0], [-1, -1], [0, -1], [1, -1]
   ];
 
-  // Discard tiny noise specks; simplify every real contour into crisp straight geometric segments!
-  const minChainLen = Math.max(3, 8 - detail); // Detail 1: >=7px clean lines; Detail 5: >=3px
-  const rdpEpsilon = Math.max(0.85, 2.75 - detail * 0.36);
+  const noiseFilter = Math.max(1, Math.min(10, Math.round(cfg.outlineNoiseFilter ?? 4)));
+  const minChainLen = Math.max(2, noiseFilter + (isCad ? 1 : Math.max(0, 4 - detail)));
+  const rdpEpsilon = isCad
+    ? Math.max(0.65, 2.0 - detail * 0.26)
+    : Math.max(0.85, 2.75 - detail * 0.36);
   const sx = outWidth / w;
   const sy = outHeight / h;
 
-  const lineSegments = []; // [x1, y1, x2, y2, r, g, b]
-  const maxSegments = isDraft ? 420 : 880;
+  // Each segment stores [x1, y1, x2, y2, cr, cg, cb, weightTier] (weightTier: 0=hairline, 1=secondary, 2=primary)
+  const lineSegments = [];
+  const maxSegments = isDraft ? (isCad ? 560 : 420) : (isCad ? 1280 : 880);
+  const primaryCutoff = Math.max(threshold * 1.55, p97 * 0.75);
+  const secondaryCutoff = threshold * 1.05;
 
   for (let y = 1; y < h - 1 && lineSegments.length < maxSegments; y++) {
     const rowOff = y * w;
@@ -993,15 +1297,15 @@ function renderOutline(
       const startIdx = rowOff + x;
       if (!active[startIdx] || visited[startIdx]) continue;
 
-      // Follow connected edge chain greedily (preferring strongest ridge continuation)
       const chain = [[x, y]];
       visited[startIdx] = 1;
       let cx = x;
       let cy = y;
       let prevDx = 0;
       let prevDy = 0;
+      let sumEdge = edgeStrength[startIdx];
 
-      for (let step = 0; step < 180; step++) {
+      for (let step = 0; step < 200; step++) {
         let bestX = -1;
         let bestY = -1;
         let bestScore = -1;
@@ -1011,8 +1315,7 @@ function renderOutline(
           if (nx <= 0 || nx >= w - 1 || ny <= 0 || ny >= h - 1) continue;
           const ni = ny * w + nx;
           if (!active[ni] || visited[ni]) continue;
-          // Favor straight continuation along previous direction for clean geometric line tracing
-          const alignBonus = (dirs8[k][0] === prevDx && dirs8[k][1] === prevDy) ? 28 : 0;
+          const alignBonus = (dirs8[k][0] === prevDx && dirs8[k][1] === prevDy) ? (isCad ? 42 : 28) : 0;
           const score = edgeStrength[ni] + alignBonus;
           if (score > bestScore) {
             bestScore = score;
@@ -1025,17 +1328,22 @@ function renderOutline(
         prevDy = bestY - cy;
         cx = bestX;
         cy = bestY;
-        visited[cy * w + cx] = 1;
+        const ni = cy * w + cx;
+        visited[ni] = 1;
+        sumEdge += edgeStrength[ni];
         chain.push([cx, cy]);
       }
 
       if (chain.length < minChainLen) continue;
 
-      // Simplify jagged pixels into crisp straight geometric line segments via RDP
       const simplified = simplifyPolylineRDP(chain, rdpEpsilon);
       if (simplified.length < 2) continue;
 
-      // Sample representative contour color from chain midpoint
+      const avgEdge = sumEdge / chain.length;
+      const tier = isCad
+        ? (avgEdge >= primaryCutoff || chain.length >= 26 ? 2 : avgEdge >= secondaryCutoff ? 1 : 0)
+        : 2;
+
       const midPt = chain[chain.length >> 1];
       const [cr, cg, cb] = getContourColor(midPt[1] * w + midPt[0]);
 
@@ -1045,17 +1353,19 @@ function renderOutline(
         let x2 = (simplified[s + 1][0] + 0.5) * sx;
         let y2 = (simplified[s + 1][1] + 0.5) * sy;
 
-        // Gentle axis snap (±5°) on bold/medium detail for architectural crispness
-        if (detail <= 3) {
-          const dx = x2 - x1;
-          const dy = y2 - y1;
-          const segLen = Math.hypot(dx, dy);
-          if (segLen > 12) {
-            if (Math.abs(dy) < segLen * 0.085) {
+        const dx = x2 - x1;
+        const dy = y2 - y1;
+        const segLen = Math.hypot(dx, dy);
+
+        // Crisp orthogonal / 45° drafting snap (stronger in Architectural CAD!)
+        if (isCad || detail <= 3) {
+          const snapSlope = isCad ? 0.14 : 0.085;
+          if (segLen > 10) {
+            if (Math.abs(dy) < segLen * snapSlope) {
               const my = (y1 + y2) * 0.5;
               y1 = my;
               y2 = my;
-            } else if (Math.abs(dx) < segLen * 0.085) {
+            } else if (Math.abs(dx) < segLen * snapSlope) {
               const mx = (x1 + x2) * 0.5;
               x1 = mx;
               x2 = mx;
@@ -1063,9 +1373,19 @@ function renderOutline(
           }
         }
 
-        lineSegments.push([x1, y1, x2, y2, cr, cg, cb]);
+        // Architectural CAD subtle hand-drafted corner overshoot on major straight lines
+        if (isCad && cfg.outlineCadGrid && tier === 2 && segLen > 24 * scaleMultiplier) {
+          const overshoot = 3.5 * scaleMultiplier;
+          const ux = (x2 - x1) / Math.max(1, Math.hypot(x2 - x1, y2 - y1));
+          const uy = (y2 - y1) / Math.max(1, Math.hypot(x2 - x1, y2 - y1));
+          x1 -= ux * overshoot;
+          y1 -= uy * overshoot;
+          x2 += ux * overshoot;
+          y2 += uy * overshoot;
+        }
 
-        // Mark tile coverage
+        lineSegments.push([x1, y1, x2, y2, cr, cg, cb, tier]);
+
         const tx = Math.min(tileCols - 1, Math.floor(((simplified[s][0] + simplified[s + 1][0]) * 0.5 / w) * tileCols));
         const ty = Math.min(tileRows - 1, Math.floor(((simplified[s][1] + simplified[s + 1][1]) * 0.5 / h) * tileRows));
         tileLineCounts[ty * tileCols + tx]++;
@@ -1073,17 +1393,19 @@ function renderOutline(
     }
   }
 
-  // Step 3: Clean Hollow Geometric Shape Fallback in regions where subject exists but clear lines are scarce
-  const fallbackPolygons = []; // { cx, cy, r, sides, rot, cr, cg, cb }
+  // Normal Outline: Clean hollow geometric polygon fallback in sparse/soft subject regions
+  // Architectural CAD: Crisp diagonal technical drafting hatch in deep shadowed regions (when sparse)
+  const fallbackPolygons = [];
+  const cadHatchSegments = [];
   const sparseMode = lineSegments.length < 28;
   const tileW = outWidth / tileCols;
   const tileH = outHeight / tileRows;
 
   for (let ty = 0; ty < tileRows; ty++) {
     for (let tx = 0; tx < tileCols; tx++) {
-      // Only add clean geometric shape fallback where line segments are scarce (0 lines, or <=1 when whole image is soft)
       const count = tileLineCounts[ty * tileCols + tx];
-      if (count > (sparseMode ? 1 : 0)) continue;
+      if (!isCad && count > (sparseMode ? 1 : 0)) continue;
+      if (isCad && count > 1) continue;
 
       const sx0 = Math.floor((tx / tileCols) * w);
       const sx1 = Math.min(w - 1, Math.floor(((tx + 1) / tileCols) * w));
@@ -1118,8 +1440,6 @@ function renderOutline(
       const avgG = sumG / samples;
       const avgB = sumB / samples;
       const avgL = sumL / samples;
-
-      // Skip uniform background tiles so white negative space stays clean!
       const bgDist = Math.hypot(avgR - borderR, avgG - borderG, avgB - borderB);
       if (bgDist < 42 && !sparseMode) continue;
       if (bgDist < 22 && sparseMode) continue;
@@ -1128,37 +1448,53 @@ function renderOutline(
       const [cr, cg, cb] = getContourColor(centerSampleIdx);
       const cx = (tx + 0.5) * tileW;
       const cy = (ty + 0.5) * tileH;
-      const normProminence = Math.min(1, bgDist / 160);
-      const polyRadius = Math.min(tileW, tileH) * (0.24 + normProminence * 0.2);
-      // Choose clean geometric primitive: 3 (triangle), 4 (diamond/square), or 6 (hexagon) by tonal band
-      const sides = avgL > 165 ? 3 : avgL > 90 ? 4 : 6;
-      const rot = Math.atan2(sumSin, sumCos) + Math.PI * 0.25;
 
-      fallbackPolygons.push({ cx, cy, r: polyRadius, sides, rot, cr, cg, cb });
+      if (isCad) {
+        // Subtle 45° architectural section hatch ticks inside shaded subject masses
+        if (avgL < 135) {
+          const half = Math.min(tileW, tileH) * 0.24;
+          const step = half * 0.65;
+          for (let offset = -step; offset <= step; offset += step) {
+            cadHatchSegments.push([cx - half + offset * 0.45, cy + half - offset * 0.45, cx + half + offset * 0.45, cy - half - offset * 0.45, cr, cg, cb]);
+          }
+        }
+      } else {
+        const normProminence = Math.min(1, bgDist / 160);
+        const polyRadius = Math.min(tileW, tileH) * (0.24 + normProminence * 0.2);
+        const sides = avgL > 165 ? 3 : avgL > 90 ? 4 : 6;
+        const rot = Math.atan2(sumSin, sumCos) + Math.PI * 0.25;
+        fallbackPolygons.push({ cx, cy, r: polyRadius, sides, rot, cr, cg, cb });
+      }
     }
   }
 
-  // Step 4: Crisp Chunked Vector Drawing (<= 24 segments per beginPath() -> zero Skia GPU freezes!)
-  const strokeWidth = Math.max(1.0, cfg.outlineThickness * scaleMultiplier);
-  const cells = options.skipCells ? null : [];
+  // Crisp Chunked Vector Drawing (<= 24 segments per beginPath() -> zero Skia GPU freezes!)
+  const baseStrokeWidth = Math.max(0.8, cfg.outlineThickness * scaleMultiplier);
+  const tierWidths = isCad
+    ? [Math.max(0.65, baseStrokeWidth * 0.46), Math.max(0.85, baseStrokeWidth * 0.78), Math.max(1.15, baseStrokeWidth * 1.25)]
+    : [baseStrokeWidth, baseStrokeWidth, baseStrokeWidth];
+  const tierAlphas = isCad ? [0.46, 0.74, 0.98] : [0.95, 0.95, 0.95];
 
+  const cells = options.skipCells ? null : [];
   ctx.save();
-  ctx.lineCap = 'round';
+  ctx.lineCap = isCad ? 'square' : 'round';
   ctx.lineJoin = 'miter';
   ctx.miterLimit = 3;
 
-  // Group straight line segments by color bucket and flush in small <= 24-segment chunks
-  const segBuckets = new Map();
+  // Group by (tier + color bucket) so Architectural CAD renders authentic 3-weight line hierarchy!
+  const tierMaps = [new Map(), new Map(), new Map()];
   for (let i = 0; i < lineSegments.length; i++) {
-    const [x1, y1, x2, y2, cr, cg, cb] = lineSegments[i];
-    const qr = cfg.outlineInkStyle === 'ink' ? 15 : cr & 0xf0;
-    const qg = cfg.outlineInkStyle === 'ink' ? 23 : cg & 0xf0;
-    const qb = cfg.outlineInkStyle === 'ink' ? 42 : cb & 0xf0;
+    const [x1, y1, x2, y2, cr, cg, cb, tier] = lineSegments[i];
+    const isSolidInk = cfg.outlineInkStyle === 'ink' || cfg.outlineInkStyle === 'blueprint';
+    const qr = isSolidInk ? cr : cr & 0xf0;
+    const qg = isSolidInk ? cg : cg & 0xf0;
+    const qb = isSolidInk ? cb : cb & 0xf0;
     const key = (qr << 16) | (qg << 8) | qb;
-    let list = segBuckets.get(key);
+    const bucketMap = tierMaps[tier];
+    let list = bucketMap.get(key);
     if (!list) {
       list = [];
-      segBuckets.set(key, list);
+      bucketMap.set(key, list);
     }
     list.push(x1, y1, x2, y2);
 
@@ -1171,29 +1507,53 @@ function renderOutline(
         b: cb,
         lum: 80,
         char: '',
-        alpha: 0.94,
-        radius: strokeWidth * 0.7
+        alpha: tierAlphas[tier],
+        radius: tierWidths[tier] * 0.7
       });
     }
   }
 
-  ctx.lineWidth = strokeWidth;
-  for (const [key, list] of segBuckets) {
-    ctx.strokeStyle = `rgb(${(key >> 16) & 255},${(key >> 8) & 255},${key & 255})`;
-    for (let start = 0; start < list.length; start += 96) {
-      const end = Math.min(list.length, start + 96);
+  // Draw hairlines first (0), then secondary (1), then bold primary structural outlines (2) on top!
+  for (let tier = 0; tier < 3; tier++) {
+    const bucketMap = tierMaps[tier];
+    if (bucketMap.size === 0) continue;
+    ctx.lineWidth = tierWidths[tier];
+    const alphaStr = tierAlphas[tier].toFixed(2);
+
+    for (const [key, list] of bucketMap) {
+      ctx.strokeStyle = `rgba(${(key >> 16) & 255},${(key >> 8) & 255},${key & 255},${alphaStr})`;
+      for (let start = 0; start < list.length; start += 96) {
+        const end = Math.min(list.length, start + 96);
+        ctx.beginPath();
+        for (let k = start; k < end; k += 4) {
+          ctx.moveTo(list[k], list[k + 1]);
+          ctx.lineTo(list[k + 2], list[k + 3]);
+        }
+        ctx.stroke();
+      }
+    }
+  }
+
+  // Architectural CAD hairline section hatching
+  if (cadHatchSegments.length > 0) {
+    ctx.lineWidth = Math.max(0.6, baseStrokeWidth * 0.38);
+    for (let start = 0; start < cadHatchSegments.length; start += 24) {
+      const end = Math.min(cadHatchSegments.length, start + 24);
+      const ref = cadHatchSegments[start];
+      ctx.strokeStyle = `rgba(${ref[4]},${ref[5]},${ref[6]},0.28)`;
       ctx.beginPath();
-      for (let k = start; k < end; k += 4) {
-        ctx.moveTo(list[k], list[k + 1]);
-        ctx.lineTo(list[k + 2], list[k + 3]);
+      for (let i = start; i < end; i++) {
+        const seg = cadHatchSegments[i];
+        ctx.moveTo(seg[0], seg[1]);
+        ctx.lineTo(seg[2], seg[3]);
       }
       ctx.stroke();
     }
   }
 
-  // Draw clean hollow geometric fallback polygons (white #FFFFFF interior preserved!)
+  // Normal Outline clean hollow geometric fallback polygons
   if (fallbackPolygons.length > 0) {
-    ctx.lineWidth = Math.max(1.0, strokeWidth * 0.78);
+    ctx.lineWidth = Math.max(1.0, baseStrokeWidth * 0.78);
     for (let i = 0; i < fallbackPolygons.length; i++) {
       const poly = fallbackPolygons[i];
       ctx.strokeStyle = `rgba(${poly.cr},${poly.cg},${poly.cb},0.72)`;
@@ -1218,7 +1578,7 @@ function renderOutline(
           lum: 100,
           char: '',
           alpha: 0.8,
-          radius: strokeWidth * 0.8
+          radius: baseStrokeWidth * 0.8
         });
       }
     }
@@ -1231,10 +1591,10 @@ function renderOutline(
     baseCanvas,
     cells,
     cols: lineSegments.length,
-    rows: fallbackPolygons.length,
+    rows: isCad ? cadHatchSegments.length : fallbackPolygons.length,
     width: outWidth,
     height: outHeight,
-    fontSize: Math.round(strokeWidth * 4),
+    fontSize: Math.round(baseStrokeWidth * 4),
     stepX: sx,
     stepY: sy,
     bgHex: interiorHex,
@@ -1304,7 +1664,7 @@ export function renderArtwork(source, config, options = {}) {
     );
   }
 
-  // Matrix Modes: Binary, ASCII, Dots — strict cell cap prevents small cellSize freezes
+  // Matrix Modes: Binary, ASCII, Dots — strict cell budget prevents freezes
   const maxCells = options.maxCells || (options.isDraft ? 3200 : scaleMultiplier > 1 ? 15000 : 7000);
   let cellSize = Math.max(4, Math.round(cfg.cellSize * scaleMultiplier));
   let stepX = Math.max(4, Math.round(cellSize * cfg.spacing));
@@ -1349,6 +1709,13 @@ export function renderArtwork(source, config, options = {}) {
   const offsetX = Math.floor((outWidth - cols * stepX) / 2);
   const offsetY = Math.floor((outHeight - rows * stepY) / 2);
 
+  const bitHigh = cfg.binaryBitSet === 'blocks' ? '█' : '1';
+  const bitLow = cfg.binaryBitSet === 'blocks' ? '░' : cfg.binaryBitSet === '1dot' ? '·' : '0';
+  const zeroAlpha = Math.max(0.08, Math.min(0.95, (cfg.binaryZeroOpacity ?? 38) / 100));
+  const asciiGamma = Math.max(0.5, Math.min(2.0, Number(cfg.asciiGamma) || 1.0));
+  const minDotFactor = Math.max(0, Math.min(0.45, (cfg.dotMinScale ?? 12) / 100));
+  const dotShape = cfg.dotShape || 'circle';
+
   const cells = options.skipCells ? null : [];
   const textLines = options.includeText ? [] : null;
   const dotBuckets = cfg.mode === 'dots' ? new Map() : null;
@@ -1389,10 +1756,11 @@ export function renderArtwork(source, config, options = {}) {
       if (cfg.mode === 'binary') {
         const ditherBias = cfg.binaryDither ? BAYER_4X4[row & 3][col & 3] * 64 : 0;
         const effectiveLum = lum + ditherBias;
-        let bit = effectiveLum >= cfg.binaryThreshold ? '1' : '0';
-        if (cfg.invert) bit = bit === '1' ? '0' : '1';
+        let isHigh = effectiveLum >= cfg.binaryThreshold;
+        if (cfg.invert) isHigh = !isHigh;
+        const bit = isHigh ? bitHigh : bitLow;
 
-        const bitAlpha = bit === '1' ? 0.98 : bgSpec.light ? 0.42 : 0.36;
+        const bitAlpha = isHigh ? 0.98 : zeroAlpha;
         const styleKey = `rgba(${cr & 0xf8},${cg & 0xf8},${cb & 0xf8},${bitAlpha.toFixed(2)})`;
         let list = glyphBuckets.get(styleKey);
         if (!list) {
@@ -1406,7 +1774,7 @@ export function renderArtwork(source, config, options = {}) {
           cells.push({ cx, cy, r: cr, g: cg, b: cb, lum, char: bit, alpha: bitAlpha, radius: 0 });
         }
       } else if (cfg.mode === 'ascii') {
-        let norm = lum / 255;
+        let norm = Math.pow(Math.max(0, Math.min(1, lum / 255)), asciiGamma);
         const shouldInvert = bgSpec.light ? !cfg.invert : cfg.invert;
         if (!shouldInvert) norm = 1 - norm;
         const charIndex = Math.min(rampLen - 1, Math.max(0, Math.floor(norm * (rampLen - 1))));
@@ -1434,15 +1802,15 @@ export function renderArtwork(source, config, options = {}) {
 
         if (cfg.dotStyle === 'brightness') {
           const factor = cfg.invert ? 1 - normLum : normLum;
-          radius = maxRadius * (0.14 + 0.86 * Math.pow(factor, 0.85));
-          dotAlpha = 0.28 + 0.72 * factor;
+          radius = maxRadius * (minDotFactor + (1 - minDotFactor) * Math.pow(factor, 0.85));
+          dotAlpha = 0.25 + 0.75 * factor;
         } else if (cfg.dotStyle === 'darkness') {
           const factor = cfg.invert ? normLum : 1 - normLum;
-          radius = maxRadius * (0.12 + 0.88 * Math.pow(factor, 0.85));
-          dotAlpha = 0.3 + 0.7 * factor;
+          radius = maxRadius * (minDotFactor + (1 - minDotFactor) * Math.pow(factor, 0.85));
+          dotAlpha = 0.28 + 0.72 * factor;
         } else {
           const factor = cfg.invert ? 1 - normLum : normLum;
-          radius = maxRadius * (0.28 + 0.72 * factor);
+          radius = maxRadius * (Math.max(0.22, minDotFactor) + (1 - Math.max(0.22, minDotFactor)) * factor);
           dotAlpha = 0.12 + 0.88 * Math.pow(factor, 1.15);
         }
 
@@ -1467,7 +1835,8 @@ export function renderArtwork(source, config, options = {}) {
   }
 
   if (glyphBuckets) {
-    ctx.font = `700 ${fontSize}px "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
+    const weight = cfg.mode === 'ascii' ? (cfg.asciiWeight || '700') : '700';
+    ctx.font = `${weight} ${fontSize}px "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     for (const [styleKey, list] of glyphBuckets) {
@@ -1486,8 +1855,18 @@ export function renderArtwork(source, config, options = {}) {
           const cx = list[k];
           const cy = list[k + 1];
           const r = list[k + 2];
-          ctx.moveTo(cx + r, cy);
-          ctx.arc(cx, cy, r, 0, Math.PI * 2);
+          if (dotShape === 'square') {
+            ctx.rect(cx - r, cy - r, r * 2, r * 2);
+          } else if (dotShape === 'diamond') {
+            ctx.moveTo(cx, cy - r * 1.15);
+            ctx.lineTo(cx + r * 1.15, cy);
+            ctx.lineTo(cx, cy + r * 1.15);
+            ctx.lineTo(cx - r * 1.15, cy);
+            ctx.closePath();
+          } else {
+            ctx.moveTo(cx + r, cy);
+            ctx.arc(cx, cy, r, 0, Math.PI * 2);
+          }
         }
         ctx.fill();
       }
@@ -1667,7 +2046,8 @@ export function compositeWithSpotlight(displayCanvas, renderResult, sourceImage,
     } else if (cell.char && cell.char !== ' ') {
       const scaledFont = Math.round(renderResult.fontSize * (1 + smooth * 0.42));
       if (scaledFont !== lastFontSize) {
-        ctx.font = `700 ${scaledFont}px "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
+        const wgt = config.mode === 'ascii' ? (config.asciiWeight || '700') : '700';
+        ctx.font = `${wgt} ${scaledFont}px "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
         lastFontSize = scaledFont;
       }
       ctx.fillStyle = `rgba(${br},${bg},${bb},${Math.min(1, cell.alpha + smooth * 0.45).toFixed(2)})`;
