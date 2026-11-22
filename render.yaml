@@ -1,9 +1,9 @@
 services:
   - type: web
-    name: binary-art-studio
+    name: visual-matrix-studio
     runtime: node
     plan: free
-    buildCommand: ""
+    buildCommand: npm install
     startCommand: node server.mjs
     healthCheckPath: /
     envVars:

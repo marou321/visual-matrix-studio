@@ -29,8 +29,8 @@ Then open `http://127.0.0.1:4173`.
 
 This repository is pre-configured for zero-dependency Node.js deployment on [Render](https://render.com/):
 
-1. Connect `https://github.com/marou321/binary-art-studio` in the Render Dashboard as a **Web Service** (or import directly via [render.yaml](render.yaml)).
-2. **Build Command**: *(leave empty — zero external npm dependencies)*
+1. Connect `https://github.com/marou321/visual-matrix-studio` in the Render Dashboard as a **Web Service** (or import directly via [render.yaml](render.yaml)).
+2. **Build Command**: `npm install`
 3. **Start Command**: `node server.mjs` (or `npm start`)
 4. `server.mjs` dynamically binds to `0.0.0.0` on `process.env.PORT || 4173` and supports clean URLs (`/`, `/gallery`, `/guides`, `/about`, `/contact`, `/privacy`) plus `HEAD` health checks.
 
