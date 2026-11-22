@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ChromaGlyph Studio — Color-True Binary, ASCII &amp; Halftone Image-to-Art Generator</title>
+  <meta
+    name="description"
+    content="Transform photographs into color-true Binary (0/1), ASCII character art, and Halftone dot illustrations right in your browser. Interactive canvas spotlight, real RGB mapping, high-res PNG export, curated gallery, and graphics guides."
+  />
+  <meta property="og:title" content="ChromaGlyph Studio — Color-True Binary, ASCII &amp; Halftone Art Studio" />
+  <meta
+    property="og:description"
+    content="Interactive browser-native image-to-art generator with real RGB colors, Binary 0/1 dithering, dense ASCII ramps, and Halftone dot screening."
+  />
+  <meta property="og:type" content="website" />
+  <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&family=Space+Grotesk:wght@600;700&display=swap"
+    rel="stylesheet"
+  />
+  <link rel="stylesheet" href="/src/css/styles.css" />
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4588627708948117" crossorigin="anonymous"></script>
+  <script>
+    (function () {
+      var t = localStorage.getItem('chromaglyph_theme');
+      if (t === 'light' || t === 'dark') {
+        document.documentElement.setAttribute('data-theme', t);
+      } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
+        document.documentElement.setAttribute('data-theme', 'light');
+      }
+    })();
+  </script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="brand" href="/">
+        <img class="brand-mark" src="/assets/favicon.svg" alt="ChromaGlyph Studio logo" width="34" height="34" />
+        <span>
+          ChromaGlyph
+          <span class="brand-sub">Visual Art Studio</span>
+        </span>
+      </a>
+
+      <nav aria-label="Primary navigation">
+        <ul id="primary-nav-links" class="nav-links">
+          <li><a href="/" aria-current="page">Studio</a></li>
+          <li><a href="/gallery">Gallery</a></li>
+          <li><a href="/guides">Guides</a></li>
+          <li><a href="/about">About</a></li>
+          <li><a href="/contact">Contact</a></li>
+          <li><a href="/privacy">Privacy</a></li>
+        </ul>
+      </nav>
+
+      <div class="header-actions">
+        <button id="theme-toggle" class="icon-btn" type="button" aria-label="Toggle color theme"></button>
+        <button
+          id="mobile-nav-toggle"
+          class="icon-btn mobile-nav-toggle"
+          type="button"
+          aria-expanded="false"
+          aria-controls="primary-nav-links"
+          aria-label="Open navigation menu"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="3" y1="6" x2="21" y2="6" />
+            <line x1="3" y1="12" x2="21" y2="12" />
+            <line x1="3" y1="18" x2="21" y2="18" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- Compact Editorial Hero -->
+    <section class="hero-compact">
+      <div class="container hero-grid">
+        <div class="hero-copy">
+          <p class="eyebrow">HTML5 Canvas 2D · True RGB Engine</p>
+          <h1 class="hero-title">
+            Turn Photos Into <span class="gradient-text">Binary, ASCII &amp; Halftone</span> Art
+          </h1>
+          <p class="hero-lead">
+            Upload any photograph or explore curated studio samples to render real-color 0/1 bitstreams,
+            optical-density ASCII typography, and offset-style halftone dots—processed 100% locally in your browser.
+          </p>
+        </div>
+
+        <div class="hero-trust-pills" aria-label="Studio highlights">
+          <span class="trust-pill"><span class="trust-dot"></span> 100% Local Processing</span>
+          <span class="trust-pill">Real RGB Color Mapping</span>
+          <span class="trust-pill">2× HiDPI PNG Export</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Multi-Mode Interactive Canvas Studio -->
+    <section id="studio" class="studio-section" aria-label="Interactive Image-to-Art Canvas Studio">
+      <div class="container">
+        <div class="studio-shell">
+          <!-- Top Sample Picker & Upload Bar -->
+          <div class="studio-topbar">
+            <div id="sample-strip" class="sample-strip" role="group" aria-label="Preloaded sample images">
+              <!-- Populated by studio.js -->
+            </div>
+
+            <div class="studio-topbar-actions">
+              <input id="image-upload-input" type="file" accept="image/*" class="sr-only" />
+              <button id="upload-trigger-btn" type="button" class="btn btn-sm btn-primary">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="17 8 12 3 7 8" />
+                  <line x1="12" y1="3" x2="12" y2="15" />
+                </svg>
+                Upload Image
+              </button>
+            </div>
+          </div>
+
+          <!-- Two-Column Studio Workspace -->
+          <div class="studio-workspace">
+            <!-- Left: Interactive Canvas Stage -->
+            <div class="canvas-stage-column">
+              <div class="canvas-toolbar">
+                <div class="toolbar-group">
+                  <button id="compare-original-btn" type="button" class="btn btn-sm btn-ghost" aria-pressed="false">
+                    Compare Original
+                  </button>
+                  <button id="randomize-recipe-btn" type="button" class="btn btn-sm btn-ghost">
+                    Randomize Recipe
+                  </button>
+                  <button id="reset-controls-btn" type="button" class="btn btn-sm btn-ghost">
+                    Reset
+                  </button>
+                </div>
+
+                <div class="toolbar-group">
+                  <button id="copy-text-btn" type="button" class="btn btn-sm btn-secondary" title="Copy generated characters as plain text">
+                    Copy Text
+                  </button>
+                </div>
+              </div>
+
+              <div id="canvas-viewport" class="canvas-viewport">
+                <div class="canvas-frame">
+                  <canvas
+                    id="studio-canvas"
+                    width="960"
+                    height="720"
+                    aria-label="Interactive rendered artwork canvas"
+                  ></canvas>
+                  <div id="spotlight-hint" class="spotlight-hint">
+                    Hover canvas: Interactive spotlight active
+                  </div>
+                </div>
+
+                <div class="drop-overlay" aria-hidden="true">
+                  <strong style="font-size: 1.2rem;">Drop your image anywhere here</strong>
+                  <span style="font-size: 0.9rem; color: #cbd5e1;">Processed locally — never uploaded to a server</span>
+                </div>
+              </div>
+
+              <div class="canvas-statusbar" aria-live="polite">
+                <div class="telemetry-items">
+                  <span>Mode: <strong id="stat-mode">ASCII</strong></span>
+                  <span>Canvas: <strong id="stat-dims">960×720px</strong></span>
+                  <span>Grid: <strong id="stat-grid">96×68</strong></span>
+                  <span>Render: <strong id="stat-time">12ms</strong></span>
+                </div>
+                <span>Drag &amp; drop PNG, JPG, or WebP onto canvas</span>
+              </div>
+            </div>
+
+            <!-- Right: Inspector Control Panel -->
+            <aside class="inspector-column" aria-label="Rendering controls">
+              <!-- Three Main Rendering Modes -->
+              <div class="mode-tabs" role="tablist" aria-label="Rendering mode">
+                <button
+                  type="button"
+                  role="tab"
+                  class="mode-tab"
+                  data-mode="binary"
+                  aria-selected="false"
+                >
+                  <span class="mode-glyph">0/1</span>
+                  <span>Binary</span>
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  class="mode-tab active"
+                  data-mode="ascii"
+                  aria-selected="true"
+                >
+                  <span class="mode-glyph">@#%</span>
+                  <span>ASCII</span>
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  class="mode-tab"
+                  data-mode="dots"
+                  aria-selected="false"
+                >
+                  <span class="mode-glyph">●○·</span>
+                  <span>Dots</span>
+                </button>
+              </div>
+
+              <div class="inspector-body">
+                <!-- Geometry & Grid -->
+                <div class="control-group">
+                  <h2 class="control-group-title">Grid &amp; Geometry</h2>
+
+                  <div class="control-row">
+                    <div class="control-label-row">
+                      <label for="ctrl-cell-size">Cell / Grid Size</label>
+                      <output id="val-cell-size" class="control-value">10px</output>
+                    </div>
+                    <input id="ctrl-cell-size" type="range" min="4" max="26" step="1" value="10" />
+                  </div>
+
+                  <div class="control-row">
+                    <div class="control-label-row">
+                      <label for="ctrl-spacing">Character / Dot Spacing</label>
+                      <output id="val-spacing" class="control-value">1.00×</output>
+                    </div>
+                    <input id="ctrl-spacing" type="range" min="0.75" max="1.7" step="0.05" value="1" />
+                  </div>
+                </div>
+
+                <!-- Mode-Specific Controls: Binary -->
+                <div id="panel-binary-options" class="control-group hidden-panel">
+                  <h2 class="control-group-title">Binary (0/1) Settings</h2>
+
+                  <div class="control-row">
+                    <div class="control-label-row">
+                      <label for="ctrl-binary-threshold">Luminance Threshold</label>
+                      <output id="val-binary-threshold" class="control-value">112</output>
+                    </div>
+                    <input id="ctrl-binary-threshold" type="range" min="20" max="235" step="1" value="112" />
+                  </div>
+
+                  <label class="toggle-row">
+                    <span>Bayer 4×4 Ordered Dithering</span>
+                    <span class="switch">
+                      <input id="ctrl-binary-dither" type="checkbox" checked />
+                      <span class="switch-slider"></span>
+                    </span>
+                  </label>
+                </div>
+
+                <!-- Mode-Specific Controls: ASCII -->
+                <div id="panel-ascii-options" class="control-group">
+                  <h2 class="control-group-title">ASCII Character Mapping</h2>
+
+                  <div class="control-row">
+                    <div class="control-label-row">
+                      <label for="ctrl-ascii-ramp">Character Density Ramp</label>
+                    </div>
+                    <select id="ctrl-ascii-ramp" class="select-input">
+                      <option value="classic">Classic (@#%*+=-:.)</option>
+                      <option value="extended">Extended 70-Step Dense</option>
+                      <option value="blocks">Unicode Blocks (█▓▒░·)</option>
+                      <option value="geometric">Geometric (◆◈◉◎○◌·)</option>
+                      <option value="minimal">High-Contrast (#+=:-.)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <!-- Mode-Specific Controls: Dots / Halftone -->
+                <div id="panel-dots-options" class="control-group hidden-panel">
+                  <h2 class="control-group-title">Halftone Dot Screening</h2>
+
+                  <div class="control-row">
+                    <div class="control-label-row">
+                      <label for="ctrl-dot-style">Dot Response Mapping</label>
+                    </div>
+                    <select id="ctrl-dot-style" class="select-input">
+                      <option value="brightness">Size by Brightness (Luminous)</option>
+                      <option value="darkness">Size by Darkness (Print Ink)</option>
+                      <option value="opacity">Size + Opacity Harmonic</option>
+                    </select>
+                  </div>
+
+                  <div class="control-row">
+                    <div class="control-label-row">
+                      <label for="ctrl-dot-scale">Max Dot Scale</label>
+                      <output id="val-dot-scale" class="control-value">92%</output>
+                    </div>
+                    <input id="ctrl-dot-scale" type="range" min="45" max="125" step="2" value="92" />
+                  </div>
+
+                  <label class="toggle-row">
+                    <span>Staggered Hexagonal Grid</span>
+                    <span class="switch">
+                      <input id="ctrl-dot-hex" type="checkbox" />
+                      <span class="switch-slider"></span>
+                    </span>
+                  </label>
+                </div>
+
+                <!-- Color & Tone Adjustments -->
+                <div class="control-group">
+                  <h2 class="control-group-title">Color &amp; Tone</h2>
+
+                  <div class="control-row">
+                    <div class="control-label-row">
+                      <label for="ctrl-color-mode">Color Palette</label>
+                    </div>
+                    <select id="ctrl-color-mode" class="select-input">
+                      <option value="rgb">True RGB (Image's Real Colors)</option>
+                      <option value="vibrant">Vibrant RGB Boost</option>
+                      <option value="mono">Clean Monochrome</option>
+                      <option value="duotone">Cyber Duotone</option>
+                      <option value="matrix">Matrix Phosphor</option>
+                      <option value="amber">Amber CRT</option>
+                      <option value="cyanotype">Cyanotype Blueprint</option>
+                    </select>
+                  </div>
+
+                  <div class="control-row">
+                    <div class="control-label-row">
+                      <label for="ctrl-contrast">Contrast</label>
+                      <output id="val-contrast" class="control-value">+18%</output>
+                    </div>
+                    <input id="ctrl-contrast" type="range" min="-80" max="90" step="1" value="18" />
+                  </div>
+
+                  <div class="control-row">
+                    <div class="control-label-row">
+                      <label for="ctrl-brightness">Brightness</label>
+                      <output id="val-brightness" class="control-value">+4%</output>
+                    </div>
+                    <input id="ctrl-brightness" type="range" min="-80" max="80" step="1" value="4" />
+                  </div>
+
+                  <div class="control-row">
+                    <div class="control-label-row">
+                      <label for="ctrl-saturation">Color Saturation</label>
+                      <output id="val-saturation" class="control-value">118%</output>
+                    </div>
+                    <input id="ctrl-saturation" type="range" min="0" max="200" step="2" value="118" />
+                  </div>
+
+                  <label class="toggle-row">
+                    <span>Invert Luminance / Bits</span>
+                    <span class="switch">
+                      <input id="ctrl-invert" type="checkbox" />
+                      <span class="switch-slider"></span>
+                    </span>
+                  </label>
+                </div>
+
+                <!-- Canvas Backdrop & Interactive Spotlight -->
+                <div class="control-group">
+                  <h2 class="control-group-title">Backdrop &amp; Hover Spotlight</h2>
+
+                  <div class="swatch-row" role="group" aria-label="Canvas background color">
+                    <button type="button" class="swatch-btn active" data-bg-swatch="obsidian">
+                      <span class="swatch-dot" style="background:#06080f;"></span>Obsidian
+                    </button>
+                    <button type="button" class="swatch-btn" data-bg-swatch="black">
+                      <span class="swatch-dot" style="background:#000000;"></span>Black
+                    </button>
+                    <button type="button" class="swatch-btn" data-bg-swatch="slate">
+                      <span class="swatch-dot" style="background:#141a26;"></span>Slate
+                    </button>
+                    <button type="button" class="swatch-btn" data-bg-swatch="paper">
+                      <span class="swatch-dot" style="background:#f8fafc;"></span>Paper
+                    </button>
+                    <button type="button" class="swatch-btn" data-bg-swatch="warm">
+                      <span class="swatch-dot" style="background:#f5f0e6;"></span>Cream
+                    </button>
+                  </div>
+
+                  <div class="control-row">
+                    <div class="control-label-row">
+                      <label for="ctrl-underlay">Original Image Underlay</label>
+                      <output id="val-underlay" class="control-value">0%</output>
+                    </div>
+                    <input id="ctrl-underlay" type="range" min="0" max="45" step="1" value="0" />
+                  </div>
+
+                  <div class="control-row">
+                    <div class="control-label-row">
+                      <label for="ctrl-spotlight-mode">Mouse Hover Effect</label>
+                    </div>
+                    <select id="ctrl-spotlight-mode" class="select-input">
+                      <option value="magnify">Magnify &amp; Illuminate Cells</option>
+                      <option value="reveal">Original Photo Reveal Lens</option>
+                      <option value="glow">Chromatic Halo Glow</option>
+                      <option value="off">Disabled</option>
+                    </select>
+                  </div>
+
+                  <div class="control-row">
+                    <div class="control-label-row">
+                      <label for="ctrl-spotlight-radius">Spotlight Radius</label>
+                      <output id="val-spotlight-radius" class="control-value">115px</output>
+                    </div>
+                    <input id="ctrl-spotlight-radius" type="range" min="50" max="240" step="5" value="115" />
+                  </div>
+                </div>
+              </div>
+
+              <!-- Sticky Export Footer -->
+              <div class="export-panel">
+                <div class="export-row">
+                  <button id="download-png-btn" type="button" class="btn btn-primary">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                      <polyline points="7 10 12 15 17 10" />
+                      <line x1="12" y1="15" x2="12" y2="3" />
+                    </svg>
+                    Download PNG
+                  </button>
+                  <select id="export-scale-select" class="select-input" aria-label="Export resolution scale" style="width:auto;">
+                    <option value="1">1× HD</option>
+                    <option value="2" selected>2× HiDPI</option>
+                  </select>
+                </div>
+              </div>
+            </aside>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Curated Pre-Generated Gallery Preview -->
+    <section class="section section-alt" aria-labelledby="featured-gallery-heading">
+      <div class="container">
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Curated Pre-Generated Recipes</p>
+            <h2 id="featured-gallery-heading">Studio Gallery &amp; Technical Breakdowns</h2>
+            <p class="section-subtitle">
+              Explore real-color artworks generated across Binary, ASCII, and Halftone modes. Each study documents
+              its exact grid spacing, threshold, and tonal adjustments—hover any piece for a live spotlight or open it directly in the Studio.
+            </p>
+          </div>
+          <a class="btn btn-secondary" href="/gallery">View All 9 Gallery Studies &rarr;</a>
+        </div>
+
+        <div id="featured-gallery-grid" class="gallery-grid">
+          <!-- Rendered cleanly by gallery-renderer.js -->
+        </div>
+      </div>
+    </section>
+
+    <!-- Educational Overview: How the Three Rendering Modes Work -->
+    <section class="section" aria-labelledby="modes-overview-heading">
+      <div class="container">
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Digital Graphics Architecture</p>
+            <h2 id="modes-overview-heading">How Binary, ASCII &amp; Halftone Rendering Work</h2>
+            <p class="section-subtitle">
+              Every output in ChromaGlyph Studio begins with block-averaged RGB sampling and perceptual Rec. 709
+              luminance calculation, then maps tonal structure onto three distinct typographic or geometric primitives.
+            </p>
+          </div>
+          <a class="btn btn-secondary" href="/guides">Read the Complete Technical Guide &rarr;</a>
+        </div>
+
+        <div class="cards-3">
+          <article class="info-card">
+            <div class="info-card-icon" style="color: var(--accent-emerald);">0/1</div>
+            <h3>Binary (0/1) Bitstream Art</h3>
+            <p>
+              Instead of reducing an image to flat black-and-white pixels, Binary mode separates structure from color:
+              perceived brightness determines whether a cell prints a bold <code>1</code> or a recessive <code>0</code>,
+              while the character inherits the cell's real RGB pigment.
+            </p>
+            <ul>
+              <li>Adjustable 0–255 luminance threshold for crisp figure-ground cutoffs.</li>
+              <li>Optional 4×4 Bayer ordered dithering to preserve smooth gradients across mid-tones.</li>
+              <li>Ideal for neon portraits, silhouettes, and cyberpunk telemetry posters.</li>
+            </ul>
+          </article>
+
+          <article class="info-card">
+            <div class="info-card-icon" style="color: var(--accent);">@#%</div>
+            <h3>Color-True ASCII Rendering</h3>
+            <p>
+              ASCII art translates continuous photographic tones into monospace characters ranked by optical ink density—from
+              heavy, pixel-filling glyphs like <code>@</code> and <code>#</code> down to minimal punctuation like <code>:</code> and <code>.</code>.
+            </p>
+            <ul>
+              <li>Five selectable ramps including Classic <code>@#%*+=-:.</code>, 70-step Extended, and Unicode Blocks.</li>
+              <li>True RGB color sampling or clean editorial palettes (Monochrome, Cyanotype, Duotone).</li>
+              <li>Supports instant plain-text clipboard copy alongside 2× HiDPI PNG export.</li>
+            </ul>
+          </article>
+
+          <article class="info-card">
+            <div class="info-card-icon" style="color: var(--accent-pink);">●○·</div>
+            <h3>Halftone &amp; Dots Screening</h3>
+            <p>
+              Inspired by classic offset lithography and architectural LED matrices, Halftone mode varies the diameter and
+              opacity of circular dots in proportion to local brightness or shadow depth.
+            </p>
+            <ul>
+              <li>Switch between Square grids (LED display feel) and Staggered Hexagonal grids (organic print feel).</li>
+              <li>Use <em>Size by Brightness</em> on obsidian backdrops or <em>Size by Darkness</em> on Gallery Paper.</li>
+              <li>Maintains crisp vector-grade circular edges at any export resolution.</li>
+            </ul>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- Best Practices & Practical Tips Summary -->
+    <section class="section section-alt" aria-labelledby="tips-heading">
+      <div class="container">
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Production Workflow</p>
+            <h2 id="tips-heading">Getting Crisp Results From Your Own Photographs</h2>
+            <p class="section-subtitle">
+              Character and dot grids compress thousands of source pixels into a deliberate typographic matrix.
+              Small adjustments to tonal separation make a dramatic difference in readability.
+            </p>
+          </div>
+        </div>
+
+        <div class="cards-2">
+          <div class="info-card">
+            <h3>1. Prioritize Clear Figure-Ground Contrast</h3>
+            <p>
+              Photographs with strong rim lighting, dark studio backdrops, or bold silhouettes translate immediately
+              into Binary and ASCII art. If your source photo looks flat or misty, raise the <strong>Contrast</strong> slider
+              between <code>+18%</code> and <code>+35%</code> before shrinking the cell size—higher contrast restores facial features
+              and edges far more effectively than tiny unreadable glyphs.
+            </p>
+          </div>
+
+          <div class="info-card">
+            <h3>2. Match Cell Size to Viewing Distance</h3>
+            <p>
+              For social avatars or mobile previews, choose coarser grids (<code>11px–16px</code>) so individual
+              characters and halftone circles remain unmistakably legible. For desktop wallpapers, album covers, or
+              large prints, step down to <code>6px–9px</code> with <strong>2× HiDPI Export</strong> enabled to capture
+              nuanced textures and specular reflections.
+            </p>
+          </div>
+
+          <div class="info-card">
+            <h3>3. Pair Canvas Background With Mode Inversion</h3>
+            <p>
+              Dark backgrounds (Obsidian, Pure Black, Deep Slate) simulate additive emissive displays where highlights
+              glow with dense glyphs and large dots. When exporting for print-inspired layouts on Gallery Paper or Warm
+              Cream, select <strong>Size by Darkness</strong> in Dots mode so deep shadows carry heavier visual ink.
+            </p>
+          </div>
+
+          <div class="info-card">
+            <h3>4. Private, Zero-Upload Browser Architecture</h3>
+            <p>
+              Every pixel sample, color transformation, and PNG export executes directly inside your browser via the
+              HTML5 Canvas 2D API. Personal portraits, client brand assets, and unreleased creative work never leave
+              your computer or touch an external storage bucket.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Frequently Asked Questions -->
+    <section class="section" aria-labelledby="faq-heading">
+      <div class="container">
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Frequently Asked Questions</p>
+            <h2 id="faq-heading">Common Questions About ChromaGlyph Studio</h2>
+          </div>
+        </div>
+
+        <div class="faq-list">
+          <details class="faq-item" open>
+            <summary>Are my uploaded images sent to a remote server?</summary>
+            <div class="faq-answer">
+              No. ChromaGlyph Studio runs entirely client-side inside your web browser using the HTML5 FileReader and
+              Canvas 2D APIs. Your images stay strictly in local browser memory and are cleared immediately when you
+              close or refresh the tab. See our <a href="/privacy">Privacy Policy</a> for full details.
+            </div>
+          </details>
+
+          <details class="faq-item">
+            <summary>How does real-color Binary (0/1) art differ from monochrome threshold art?</summary>
+            <div class="faq-answer">
+              Traditional binary thresholding collapses each pixel to pure white or pure black, losing all hue
+              information. ChromaGlyph decouples luminance from chrominance: the cell's perceived brightness selects
+              either a <code>1</code> or <code>0</code> (optionally smoothed with Bayer 4×4 dithering), while the glyph
+              itself is painted with the cell's sampled RGB color.
+            </div>
+          </details>
+
+          <details class="faq-item">
+            <summary>Can I use exported PNG and ASCII artworks in commercial or personal projects?</summary>
+            <div class="faq-answer">
+              Yes. You retain full rights to any artwork you generate from your own photographs or licensed images.
+              Exports are clean, watermark-free PNGs (up to 2× HiDPI resolution) and raw plain-text character grids.
+            </div>
+          </details>
+
+          <details class="faq-item">
+            <summary>Why do some photos look better in Hexagonal Halftone than Square Halftone?</summary>
+            <div class="faq-answer">
+              Square dot grids align strictly along 0° and 90° axes, which can accentuate stair-stepping on organic curves
+              like faces, petals, or koi fish. Staggering alternating rows in a Hexagonal grid distributes dots at 60°
+              angles—closely mirroring professional print screening—producing smoother perceived contours.
+            </div>
+          </details>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div>
+          <a class="brand" href="/">
+            <img class="brand-mark" src="/assets/favicon.svg" alt="ChromaGlyph Studio logo" width="32" height="32" />
+            <span>ChromaGlyph Studio</span>
+          </a>
+          <p class="footer-brand-desc">
+            A modern, privacy-first web studio for generating color-true Binary (0/1), ASCII typography, and Halftone
+            dot artwork directly on HTML5 Canvas.
+          </p>
+        </div>
+
+        <div class="footer-col">
+          <h4>Studio</h4>
+          <ul>
+            <li><a href="/#studio">Interactive Canvas</a></li>
+            <li><a href="/gallery">Curated Gallery</a></li>
+            <li><a href="/?preset=neon-binary-matrix#studio">Binary 0/1 Mode</a></li>
+            <li><a href="/?preset=aurora-ascii-tapestry#studio">ASCII Art Mode</a></li>
+            <li><a href="/?preset=koi-hex-halftone#studio">Halftone Dots Mode</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h4>Learn</h4>
+          <ul>
+            <li><a href="/guides#binary-art">How Binary Art Works</a></li>
+            <li><a href="/guides#ascii-rendering">ASCII Optical Density</a></li>
+            <li><a href="/guides#halftone-dots">Halftone &amp; Dot Screening</a></li>
+            <li><a href="/guides#contrast-resolution">Contrast &amp; Resolution Tips</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h4>Company &amp; Legal</h4>
+          <ul>
+            <li><a href="/about">About ChromaGlyph</a></li>
+            <li><a href="/contact">Contact &amp; Support</a></li>
+            <li><a href="/privacy">Privacy Policy</a></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="footer-bottom">
+        <span>&copy; 2026 ChromaGlyph Studio. All image processing runs locally in your browser.</span>
+        <span>Built with semantic HTML5, CSS3 &amp; Canvas 2D</span>
+      </div>
+    </div>
+  </footer>
+
+  <script type="module" src="/src/js/theme.js"></script>
+  <script type="module" src="/src/js/studio.js"></script>
+  <script type="module" src="/src/js/gallery-renderer.js"></script>
+</body>
+</html>

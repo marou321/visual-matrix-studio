@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Curated Gallery — Binary, ASCII &amp; Halftone Studies | ChromaGlyph Studio</title>
+  <meta
+    name="description"
+    content="Browse 9 curated pre-generated artworks across Color-True Binary (0/1), ASCII typography, and Halftone Dots modes. Inspect technical settings, compare original photos, and open any recipe in the live studio."
+  />
+  <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&family=Space+Grotesk:wght@600;700&display=swap"
+    rel="stylesheet"
+  />
+  <link rel="stylesheet" href="/src/css/styles.css" />
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4588627708948117" crossorigin="anonymous"></script>
+  <script>
+    (function () {
+      var t = localStorage.getItem('chromaglyph_theme');
+      if (t === 'light' || t === 'dark') {
+        document.documentElement.setAttribute('data-theme', t);
+      } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
+        document.documentElement.setAttribute('data-theme', 'light');
+      }
+    })();
+  </script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="brand" href="/">
+        <img class="brand-mark" src="/assets/favicon.svg" alt="ChromaGlyph Studio logo" width="34" height="34" />
+        <span>
+          ChromaGlyph
+          <span class="brand-sub">Visual Art Studio</span>
+        </span>
+      </a>
+
+      <nav aria-label="Primary navigation">
+        <ul id="primary-nav-links" class="nav-links">
+          <li><a href="/">Studio</a></li>
+          <li><a href="/gallery" aria-current="page">Gallery</a></li>
+          <li><a href="/guides">Guides</a></li>
+          <li><a href="/about">About</a></li>
+          <li><a href="/contact">Contact</a></li>
+          <li><a href="/privacy">Privacy</a></li>
+        </ul>
+      </nav>
+
+      <div class="header-actions">
+        <button id="theme-toggle" class="icon-btn" type="button" aria-label="Toggle color theme"></button>
+        <button
+          id="mobile-nav-toggle"
+          class="icon-btn mobile-nav-toggle"
+          type="button"
+          aria-expanded="false"
+          aria-controls="primary-nav-links"
+          aria-label="Open navigation menu"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="3" y1="6" x2="21" y2="6" />
+            <line x1="3" y1="12" x2="21" y2="12" />
+            <line x1="3" y1="18" x2="21" y2="18" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="page-hero">
+      <div class="container">
+        <p class="eyebrow">Curated Visual Showcase</p>
+        <h1>Pre-Generated Studio Gallery &amp; Technical Recipes</h1>
+        <p>
+          Every artwork below is rendered live from high-contrast reference photography using ChromaGlyph's exact
+          Color-True Binary, ASCII, and Halftone engine. Filter by rendering mode, inspect full-resolution comparisons,
+          or launch any recipe directly into the interactive studio with one click.
+        </p>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <div class="filter-bar" role="group" aria-label="Filter gallery by rendering mode">
+          <button type="button" class="filter-pill active" data-gallery-filter="all" aria-pressed="true">
+            All Studies (9)
+          </button>
+          <button type="button" class="filter-pill" data-gallery-filter="binary" aria-pressed="false">
+            Binary 0/1 (3)
+          </button>
+          <button type="button" class="filter-pill" data-gallery-filter="ascii" aria-pressed="false">
+            ASCII Art (3)
+          </button>
+          <button type="button" class="filter-pill" data-gallery-filter="dots" aria-pressed="false">
+            Dots / Halftone (3)
+          </button>
+        </div>
+
+        <div id="full-gallery-grid" class="gallery-grid">
+          <!-- Populated by gallery-renderer.js -->
+        </div>
+      </div>
+    </section>
+
+    <section class="section section-alt">
+      <div class="container">
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Understanding the Settings</p>
+            <h2>How to Adapt These Gallery Recipes to Your Own Photos</h2>
+            <p class="section-subtitle">
+              No two photographs share the same dynamic range or color gamut. Use the patterns below to translate
+              any gallery recipe cleanly onto your own portraits, landscapes, or product shots.
+            </p>
+          </div>
+          <a class="btn btn-primary" href="/#studio">Launch Studio &rarr;</a>
+        </div>
+
+        <div class="cards-3">
+          <div class="info-card">
+            <h3>Portraits &amp; Rim Lighting</h3>
+            <p>
+              Start with <strong>Cyber Rim-Light Bitstream</strong> or <strong>LED Matrix Opacity Portrait</strong>.
+              Lower the Binary threshold toward <code>95–110</code> when facial features sit in mid-shadow, and nudge
+              saturation up to <code>125%–135%</code> so subtle skin and rim colors survive glyph downsampling.
+            </p>
+          </div>
+
+          <div class="info-card">
+            <h3>Landscapes &amp; Soft Gradients</h3>
+            <p>
+              Skies, water reflections, and fog require smooth tonal stepping. Choose <strong>Aurora Chromatic ASCII</strong>
+              or <strong>Tropical Petal Micro-Glyphs</strong> with a 9px or 8px grid and the Classic or 70-step Extended
+              character ramp to avoid harsh banding across atmospheric transitions.
+            </p>
+          </div>
+
+          <div class="info-card">
+            <h3>Graphic Architecture &amp; Print</h3>
+            <p>
+              Hard shadows and geometric shapes shine in <strong>Offset Print Brutalist Study</strong>. Pair a light
+              Gallery Paper backdrop with <em>Size by Darkness</em> Halftone dots and a <code>+25% to +35%</code> contrast
+              boost for crisp editorial poster aesthetics.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div>
+          <a class="brand" href="/">
+            <img class="brand-mark" src="/assets/favicon.svg" alt="ChromaGlyph Studio logo" width="32" height="32" />
+            <span>ChromaGlyph Studio</span>
+          </a>
+          <p class="footer-brand-desc">
+            A modern, privacy-first web studio for generating color-true Binary (0/1), ASCII typography, and Halftone
+            dot artwork directly on HTML5 Canvas.
+          </p>
+        </div>
+
+        <div class="footer-col">
+          <h4>Studio</h4>
+          <ul>
+            <li><a href="/#studio">Interactive Canvas</a></li>
+            <li><a href="/gallery">Curated Gallery</a></li>
+            <li><a href="/?preset=neon-binary-matrix#studio">Binary 0/1 Mode</a></li>
+            <li><a href="/?preset=aurora-ascii-tapestry#studio">ASCII Art Mode</a></li>
+            <li><a href="/?preset=koi-hex-halftone#studio">Halftone Dots Mode</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h4>Learn</h4>
+          <ul>
+            <li><a href="/guides#binary-art">How Binary Art Works</a></li>
+            <li><a href="/guides#ascii-rendering">ASCII Optical Density</a></li>
+            <li><a href="/guides#halftone-dots">Halftone &amp; Dot Screening</a></li>
+            <li><a href="/guides#contrast-resolution">Contrast &amp; Resolution Tips</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h4>Company &amp; Legal</h4>
+          <ul>
+            <li><a href="/about">About ChromaGlyph</a></li>
+            <li><a href="/contact">Contact &amp; Support</a></li>
+            <li><a href="/privacy">Privacy Policy</a></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="footer-bottom">
+        <span>&copy; 2026 ChromaGlyph Studio. All image processing runs locally in your browser.</span>
+        <span>Built with semantic HTML5, CSS3 &amp; Canvas 2D</span>
+      </div>
+    </div>
+  </footer>
+
+  <script type="module" src="/src/js/theme.js"></script>
+  <script type="module" src="/src/js/gallery-renderer.js"></script>
+</body>
+</html>

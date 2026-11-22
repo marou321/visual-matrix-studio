@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Digital Graphics Guides — Binary Art, ASCII Rendering &amp; Halftone Dots | ChromaGlyph Studio</title>
+  <meta
+    name="description"
+    content="In-depth technical guide explaining how Binary (0/1) art, Color ASCII optical density mapping, and Halftone dot screening work in digital graphics, plus practical contrast and resolution tuning tips."
+  />
+  <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&family=Space+Grotesk:wght@600;700&display=swap"
+    rel="stylesheet"
+  />
+  <link rel="stylesheet" href="/src/css/styles.css" />
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4588627708948117" crossorigin="anonymous"></script>
+  <script>
+    (function () {
+      var t = localStorage.getItem('chromaglyph_theme');
+      if (t === 'light' || t === 'dark') {
+        document.documentElement.setAttribute('data-theme', t);
+      } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
+        document.documentElement.setAttribute('data-theme', 'light');
+      }
+    })();
+  </script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="brand" href="/">
+        <img class="brand-mark" src="/assets/favicon.svg" alt="ChromaGlyph Studio logo" width="34" height="34" />
+        <span>
+          ChromaGlyph
+          <span class="brand-sub">Visual Art Studio</span>
+        </span>
+      </a>
+
+      <nav aria-label="Primary navigation">
+        <ul id="primary-nav-links" class="nav-links">
+          <li><a href="/">Studio</a></li>
+          <li><a href="/gallery">Gallery</a></li>
+          <li><a href="/guides" aria-current="page">Guides</a></li>
+          <li><a href="/about">About</a></li>
+          <li><a href="/contact">Contact</a></li>
+          <li><a href="/privacy">Privacy</a></li>
+        </ul>
+      </nav>
+
+      <div class="header-actions">
+        <button id="theme-toggle" class="icon-btn" type="button" aria-label="Toggle color theme"></button>
+        <button
+          id="mobile-nav-toggle"
+          class="icon-btn mobile-nav-toggle"
+          type="button"
+          aria-expanded="false"
+          aria-controls="primary-nav-links"
+          aria-label="Open navigation menu"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="3" y1="6" x2="21" y2="6" />
+            <line x1="3" y1="12" x2="21" y2="12" />
+            <line x1="3" y1="18" x2="21" y2="18" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="page-hero">
+      <div class="container">
+        <p class="eyebrow">Technical Handbook &amp; Graphics Theory</p>
+        <h1>How Binary Art, ASCII Rendering &amp; Halftone Dots Work</h1>
+        <p>
+          A comprehensive guide to the mathematics, perception science, and visual craft behind character-based
+          and dot-screened image synthesis—written for designers, creative coders, and photographers looking to get
+          sharp, gallery-worthy results.
+        </p>
+      </div>
+    </section>
+
+    <div class="container editorial-layout">
+      <!-- Sticky Table of Contents -->
+      <aside class="toc-sidebar" aria-label="Guide contents">
+        <p class="toc-title">On This Page</p>
+        <ul class="toc-list">
+          <li><a href="#pipeline">1. The Pixel-to-Glyph Pipeline</a></li>
+          <li><a href="#binary-art">2. How Binary (0/1) Art Works</a></li>
+          <li><a href="#ascii-rendering">3. ASCII Optical Density &amp; Ramps</a></li>
+          <li><a href="#halftone-dots">4. Halftone Dots &amp; Screening Grids</a></li>
+          <li><a href="#contrast-resolution">5. Contrast, Resolution &amp; Tuning</a></li>
+          <li><a href="#genre-table">6. Recommended Settings by Subject</a></li>
+          <li><a href="#guides-faq">7. Technical FAQ</a></li>
+        </ul>
+        <div style="margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--border);">
+          <a class="btn btn-primary btn-sm" style="width:100%;" href="/#studio">Try in Live Studio</a>
+        </div>
+      </aside>
+
+      <!-- Long-Form Technical Prose -->
+      <article class="prose">
+        <section id="pipeline">
+          <h2>1. The Pixel-to-Glyph Sampling Pipeline</h2>
+          <p>
+            A modern smartphone photograph contains anywhere from 12 million to 48 million individual RGB pixels.
+            Representing that image with typographic glyphs (<code>0</code>, <code>1</code>, <code>@</code>, <code>#</code>)
+            or halftone circles requires an intentional spatial compression step called <strong>block downsampling</strong>.
+          </p>
+          <p>
+            Rather than reading a single point pixel at the center of each cell—which causes shimmering aliasing artifacts
+            on fine textures like hair, foliage, or fabric—ChromaGlyph Studio averages the color energy across each
+            <code>cellSize × cellSize</code> block using high-quality bicubic/area resampling. Each cell receives one
+            representative <code>(R, G, B)</code> triplet.
+          </p>
+          <p>
+            Next, the engine applies user contrast, brightness, and saturation curves before computing
+            <strong>perceptual relative luminance</strong> using the ITU-R BT.709 (Rec. 709) standard designed for sRGB displays:
+          </p>
+
+          <div class="formula-box">
+            Y = 0.2126 · R + 0.7152 · G + 0.0722 · B
+            <div class="formula-caption">
+              Human vision is roughly three times more sensitive to green wavelengths than red, and ten times more
+              sensitive to green than blue. Using unweighted averages <code>(R+G+B)/3</code> makes vivid blue skies
+              look artificially bright and washes out emerald foliage.
+            </div>
+          </div>
+
+          <p>
+            Once every cell carries both its adjusted real RGB color and its perceptual luminance <code>Y</code>
+            (from <code>0</code> to <code>255</code>), the rendering mode decides what symbol or shape to draw.
+          </p>
+        </section>
+
+        <section id="binary-art">
+          <h2>2. How Binary (0/1) Image Art Works</h2>
+          <p>
+            In classic 1-bit computer graphics, binary thresholding compares every pixel's luminance against a single
+            cutoff value <code>T</code> (for example, <code>T = 128</code>). Anything brighter becomes white; anything
+            darker becomes black. While striking on logos, pure 1-bit binarization discards subtle shading and all color.
+          </p>
+          <p>
+            <strong>Color-True Binary Art</strong> solves both limitations through two techniques:
+          </p>
+          <ul>
+            <li>
+              <strong>Luminance-to-Bit Separation:</strong> Luminance determines whether the cell prints a
+              <code>1</code> (high luminance, full opacity) or a <code>0</code> (low luminance, subtly recessed opacity),
+              while the character's fill style preserves the sampled cell's actual RGB color. Your eye reads the crisp
+              digital bitstream up close and the full-color photograph from a step back.
+            </li>
+            <li>
+              <strong>4×4 Bayer Ordered Dithering:</strong> When enabled, a deterministic 16-level spatial threshold
+              matrix offsets each cell's cutoff before comparing against <code>T</code>. Mid-tone gradients (such as
+              cheek shading, sunsets, or water ripples) dissolve into woven crosshatch patterns of <code>1</code>s and
+              <code>0</code>s instead of abrupt posterized bands.
+            </li>
+          </ul>
+
+          <div class="callout">
+            <div class="callout-title">Studio Tip: Hard Cutoff vs. Ordered Dithering</div>
+            <p style="margin-bottom:0;">
+              Keep <strong>Bayer 4×4 Dithering enabled</strong> for portraits, landscapes, and glowing nebulae where
+              smooth transitions matter. Turn dithering <strong>off</strong> when you want a stark graphic-novel
+              silhouette—such as dark shadows framing a bright crimson koi fish or minimalist brutalist concrete.
+            </p>
+          </div>
+        </section>
+
+        <section id="ascii-rendering">
+          <h2>3. The Mechanics of Color ASCII Rendering</h2>
+          <p>
+            ASCII art predates modern graphical displays, originating on 1960s teleprinters and line printers where
+            operators discovered that stacking dense punctuation marks could approximate grayscale photography.
+            The secret lies in <strong>optical ink density</strong>—the percentage of a monospace character bounding box
+            filled by visible strokes.
+          </p>
+          <p>
+            In a standard dark-background studio canvas, bright areas receive high-density characters (<code>@</code>,
+            <code>#</code>, <code>%</code>) because lit pixels emit more light, while shadowed regions receive sparse
+            glyphs (<code>:</code>, <code>.</code>, or space). Below is how the classic 10-step ramp distributes visual weight:
+          </p>
+
+          <div class="ramp-visualizer" aria-label="Classic ASCII character optical density ramp">
+            <div class="ramp-cell"><span class="ramp-glyph">@</span><span class="ramp-pct">100%</span></div>
+            <div class="ramp-cell"><span class="ramp-glyph">#</span><span class="ramp-pct">89%</span></div>
+            <div class="ramp-cell"><span class="ramp-glyph">%</span><span class="ramp-pct">78%</span></div>
+            <div class="ramp-cell"><span class="ramp-glyph">*</span><span class="ramp-pct">67%</span></div>
+            <div class="ramp-cell"><span class="ramp-glyph">+</span><span class="ramp-pct">56%</span></div>
+            <div class="ramp-cell"><span class="ramp-glyph">=</span><span class="ramp-pct">44%</span></div>
+            <div class="ramp-cell"><span class="ramp-glyph">-</span><span class="ramp-pct">33%</span></div>
+            <div class="ramp-cell"><span class="ramp-glyph">:</span><span class="ramp-pct">22%</span></div>
+            <div class="ramp-cell"><span class="ramp-glyph">.</span><span class="ramp-pct">11%</span></div>
+            <div class="ramp-cell"><span class="ramp-glyph">&nbsp;</span><span class="ramp-pct">0%</span></div>
+          </div>
+
+          <h3>Choosing the Right Character Set</h3>
+          <ul>
+            <li>
+              <strong>Classic (<code>@#%*+=-:. </code>):</strong> Ten cleanly separated optical tiers. Delivers the most
+              immediately recognizable "classic terminal ASCII" texture with bold legibility.
+            </li>
+            <li>
+              <strong>Extended 70-Step Ramp:</strong> Uses lowercase letters, brackets, slashes, and punctuation for ultra-fine
+              tonal nuance. Best paired with smaller <code>7px–9px</code> grids and macro or landscape photography.
+            </li>
+            <li>
+              <strong>Unicode Blocks (<code>█▓▒░·</code>):</strong> Fills full rectangular cells with dithered stipple
+              shades—ideal for architectural subjects and retro ANSI/teletext aesthetics.
+            </li>
+            <li>
+              <strong>Geometric (<code>◆◈◉◎○◌·</code>):</strong> Symmetrical vector-like glyphs that sit halfway between
+              ASCII typography and modern generative art.
+            </li>
+          </ul>
+
+          <h3>Light Paper vs. Dark Obsidian Inversion</h3>
+          <p>
+            When you switch the canvas backdrop to <strong>Gallery Paper</strong> or <strong>Warm Cream</strong>,
+            ChromaGlyph automatically inverts the optical density mapping so dark shadows receive heavy ink characters
+            (<code>@</code>, <code>#</code>) and bright highlights breathe as open paper—just like ink on physical newsprint.
+            You can also override this manually anytime with the <em>Invert Luminance / Bits</em> switch.
+          </p>
+        </section>
+
+        <section id="halftone-dots">
+          <h2>4. Halftone &amp; Dots in Digital Graphics</h2>
+          <p>
+            Halftoning was invented in the late nineteenth century to print continuous-tone photographs using presses that
+            could only deposit solid ink or leave bare paper. By breaking an image into a regular lattice of dots whose
+            diameters expand and contract with tonal intensity (<strong>Amplitude Modulation, or AM screening</strong>),
+            the human visual system optically integrates the dots back into smooth gradients at normal viewing distances.
+          </p>
+
+          <h3>Square Grids vs. Staggered Hexagonal Grids</h3>
+          <p>
+            In digital canvas rendering, dot placement geometry dramatically changes the emotional tone of the artwork:
+          </p>
+          <ul>
+            <li>
+              <strong>Square Lattice (0° / 90°):</strong> Aligns every row and column orthogonally. This mimics physical
+              stadium LED displays, Lite-Brite boards, and architectural pixel facades—clean, rhythmic, and distinctly digital.
+            </li>
+            <li>
+              <strong>Staggered Hexagonal Lattice (60° offset):</strong> Shifts odd rows horizontally by half a cell pitch.
+              Hexagonal packing increases nearest-neighbor uniformity, reduces diagonal stair-stepping (aliasing) along
+              organic curves, and echoes traditional lithographic offset screens.
+            </li>
+          </ul>
+
+          <h3>Additive Luminous Dots vs. Subtractive Print Dots</h3>
+          <p>
+            ChromaGlyph offers three distinct dot-response curves:
+          </p>
+          <ol>
+            <li>
+              <strong>Size by Brightness (Luminous):</strong> Highlights grow into large glowing circles while shadows
+              shrink to tiny pinpoints. Built for dark Obsidian or Pure Black screens.
+            </li>
+            <li>
+              <strong>Size by Darkness (Print Ink):</strong> Shadows swell into bold overlapping circles while bright
+              highlights open into white space. Pair with Gallery Paper or Warm Cream for authentic poster art.
+            </li>
+            <li>
+              <strong>Size + Opacity Harmonic:</strong> Modulates both dot radius and alpha transparency simultaneously,
+              producing luminous, atmospheric fades ideal for neon lighting and nocturnal cityscapes.
+            </li>
+          </ol>
+        </section>
+
+        <section id="contrast-resolution">
+          <h2>5. Practical Guide: Best Image Contrast &amp; Resolution</h2>
+          <p>
+            The most common reason a first ASCII or Binary conversion looks muddy has nothing to do with the character
+            set—it comes from low tonal separation in the source photograph. Follow these four production rules to elevate
+            any upload:
+          </p>
+          <ol>
+            <li>
+              <strong>Use Clean, Well-Lit Source Files (800px–2400px wide):</strong> Extremely tiny thumbnails
+              (under 300px) introduce JPEG block artifacts into color sampling, while massive 60MB RAW exports add
+              unnecessary decode latency without improving a 100-column glyph grid. Standard 1080p–4K JPEGs and PNGs are ideal.
+            </li>
+            <li>
+              <strong>Push Contrast Before Shrinking Cell Size:</strong> If eyes, jawlines, or architectural edges look
+              soft, resist dropping Cell Size down to <code>4px</code> right away—at 4px the characters turn into visual
+              noise. Instead, keep Cell Size at <code>8px–11px</code> and raise Contrast to <code>+20% to +35%</code>.
+            </li>
+            <li>
+              <strong>Compensate for Dark Backdrops With Saturation:</strong> Colored glyphs surrounded by pure black
+              occupy far less surface area than solid pixels, making colors appear ~15–25% less vivid to human eyes.
+              Boosting Color Saturation to <code>115%–135%</code> restores the emotional punch of the original photo.
+            </li>
+            <li>
+              <strong>Export at 2× HiDPI for Sharing &amp; Print:</strong> Crisp character anti-aliasing and circular
+              halftone edges benefit hugely from high pixel density. Select <code>2× HiDPI</code> before clicking
+              <em>Download PNG</em> so your artwork looks razor-sharp on Retina displays and social feeds.
+            </li>
+          </ol>
+        </section>
+
+        <section id="genre-table">
+          <h2>6. Recommended Starting Settings by Image Genre</h2>
+          <p>
+            Use this quick-reference matrix as a starting point when uploading your own photography into ChromaGlyph Studio:
+          </p>
+
+          <div class="data-table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Subject Type</th>
+                  <th>Best Mode</th>
+                  <th>Cell Size</th>
+                  <th>Contrast / Sat</th>
+                  <th>Key Setting</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Studio / Neon Portraits</td>
+                  <td>Binary 0/1 or ASCII</td>
+                  <td>8px – 10px</td>
+                  <td>+22% / 130%</td>
+                  <td>Bayer Dither ON, Obsidian backdrop</td>
+                </tr>
+                <tr>
+                  <td>Landscapes &amp; Skies</td>
+                  <td>ASCII (Classic / Extended)</td>
+                  <td>7px – 9px</td>
+                  <td>+18% / 120%</td>
+                  <td>True RGB, 0.95×–1.0× spacing</td>
+                </tr>
+                <tr>
+                  <td>Architecture &amp; Shadows</td>
+                  <td>Dots (Print) or Block ASCII</td>
+                  <td>10px – 12px</td>
+                  <td>+28% / 110%</td>
+                  <td>Size by Darkness + Gallery Paper</td>
+                </tr>
+                <tr>
+                  <td>Macro Flowers / Nature</td>
+                  <td>Hex Halftone or Extended ASCII</td>
+                  <td>8px – 10px</td>
+                  <td>+16% / 128%</td>
+                  <td>Hexagonal Grid ON, Vibrant RGB</td>
+                </tr>
+                <tr>
+                  <td>Logos &amp; Bold Silhouettes</td>
+                  <td>Binary 0/1 (Hard Cutoff)</td>
+                  <td>10px – 14px</td>
+                  <td>+35% / 125%</td>
+                  <td>Bayer Dither OFF, Threshold 115–130</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="guides-faq">
+          <h2>7. Extended Technical FAQ</h2>
+          <div class="faq-list">
+            <details class="faq-item">
+              <summary>Does the mouse hover spotlight appear in my downloaded PNG?</summary>
+              <div class="faq-answer">
+                No. The interactive hover spotlight is a real-time exploratory lens on the live canvas stage. When you
+                click <strong>Download PNG</strong>, ChromaGlyph renders a clean, full-resolution master frame free of
+                cursor artifacts or overlays.
+              </div>
+            </details>
+
+            <details class="faq-item">
+              <summary>Why is plain-text Copy disabled in Dots / Halftone mode?</summary>
+              <div class="faq-answer">
+                Binary and ASCII modes map every cell to standard Unicode/ASCII characters that paste cleanly into code
+                editors, README files, and terminals. Halftone Dots mode renders continuous variable-radius geometric
+                circles directly on HTML5 Canvas, which can only be preserved accurately as raster PNG graphics.
+              </div>
+            </details>
+
+            <details class="faq-item">
+              <summary>How does the Original Image Underlay slider help legibility?</summary>
+              <div class="faq-answer">
+                Blending a faint <code>5%–15%</code> photographic underlay behind Binary or ASCII glyphs fills the micro-gaps
+                between characters with soft ambient light, making glossy surfaces (glass, water, metallic helmets) read
+                with extra depth without overpowering the typographic foreground.
+              </div>
+            </details>
+          </div>
+        </section>
+      </article>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div>
+          <a class="brand" href="/">
+            <img class="brand-mark" src="/assets/favicon.svg" alt="ChromaGlyph Studio logo" width="32" height="32" />
+            <span>ChromaGlyph Studio</span>
+          </a>
+          <p class="footer-brand-desc">
+            A modern, privacy-first web studio for generating color-true Binary (0/1), ASCII typography, and Halftone
+            dot artwork directly on HTML5 Canvas.
+          </p>
+        </div>
+
+        <div class="footer-col">
+          <h4>Studio</h4>
+          <ul>
+            <li><a href="/#studio">Interactive Canvas</a></li>
+            <li><a href="/gallery">Curated Gallery</a></li>
+            <li><a href="/?preset=neon-binary-matrix#studio">Binary 0/1 Mode</a></li>
+            <li><a href="/?preset=aurora-ascii-tapestry#studio">ASCII Art Mode</a></li>
+            <li><a href="/?preset=koi-hex-halftone#studio">Halftone Dots Mode</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h4>Learn</h4>
+          <ul>
+            <li><a href="/guides#binary-art">How Binary Art Works</a></li>
+            <li><a href="/guides#ascii-rendering">ASCII Optical Density</a></li>
+            <li><a href="/guides#halftone-dots">Halftone &amp; Dot Screening</a></li>
+            <li><a href="/guides#contrast-resolution">Contrast &amp; Resolution Tips</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h4>Company &amp; Legal</h4>
+          <ul>
+            <li><a href="/about">About ChromaGlyph</a></li>
+            <li><a href="/contact">Contact &amp; Support</a></li>
+            <li><a href="/privacy">Privacy Policy</a></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="footer-bottom">
+        <span>&copy; 2026 ChromaGlyph Studio. All image processing runs locally in your browser.</span>
+        <span>Built with semantic HTML5, CSS3 &amp; Canvas 2D</span>
+      </div>
+    </div>
+  </footer>
+
+  <script type="module" src="/src/js/theme.js"></script>
+</body>
+</html>

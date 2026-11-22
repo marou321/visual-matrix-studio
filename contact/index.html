@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Contact &amp; Support | ChromaGlyph Studio</title>
+  <meta
+    name="description"
+    content="Contact the ChromaGlyph Studio team for technical support, bug reports, feature suggestions, educational partnerships, or privacy inquiries."
+  />
+  <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&family=Space+Grotesk:wght@600;700&display=swap"
+    rel="stylesheet"
+  />
+  <link rel="stylesheet" href="/src/css/styles.css" />
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4588627708948117" crossorigin="anonymous"></script>
+  <script>
+    (function () {
+      var t = localStorage.getItem('chromaglyph_theme');
+      if (t === 'light' || t === 'dark') {
+        document.documentElement.setAttribute('data-theme', t);
+      } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
+        document.documentElement.setAttribute('data-theme', 'light');
+      }
+    })();
+  </script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="brand" href="/">
+        <img class="brand-mark" src="/assets/favicon.svg" alt="ChromaGlyph Studio logo" width="34" height="34" />
+        <span>
+          ChromaGlyph
+          <span class="brand-sub">Visual Art Studio</span>
+        </span>
+      </a>
+
+      <nav aria-label="Primary navigation">
+        <ul id="primary-nav-links" class="nav-links">
+          <li><a href="/">Studio</a></li>
+          <li><a href="/gallery">Gallery</a></li>
+          <li><a href="/guides">Guides</a></li>
+          <li><a href="/about">About</a></li>
+          <li><a href="/contact" aria-current="page">Contact</a></li>
+          <li><a href="/privacy">Privacy</a></li>
+        </ul>
+      </nav>
+
+      <div class="header-actions">
+        <button id="theme-toggle" class="icon-btn" type="button" aria-label="Toggle color theme"></button>
+        <button
+          id="mobile-nav-toggle"
+          class="icon-btn mobile-nav-toggle"
+          type="button"
+          aria-expanded="false"
+          aria-controls="primary-nav-links"
+          aria-label="Open navigation menu"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="3" y1="6" x2="21" y2="6" />
+            <line x1="3" y1="12" x2="21" y2="12" />
+            <line x1="3" y1="18" x2="21" y2="18" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="page-hero">
+      <div class="container">
+        <p class="eyebrow">Get in Touch</p>
+        <h1>Contact ChromaGlyph Studio</h1>
+        <p>
+          Questions about rendering modes, browser compatibility, educational licensing, or privacy? Send us a message
+          below or email us directly and we will respond within two business days.
+        </p>
+      </div>
+    </section>
+
+    <section class="container contact-grid">
+      <div class="form-card">
+        <h2 style="font-size: 1.45rem; margin-bottom: 0.45rem;">Send a Message</h2>
+        <p style="color: var(--text-muted); font-size: 0.92rem; margin-bottom: 1.5rem;">
+          Use this form for bug reports, custom character ramp requests, or general feedback.
+        </p>
+
+        <form id="contact-form" novalidate>
+          <div class="form-grid">
+            <div class="form-field">
+              <label for="contact-name">Your Name</label>
+              <input id="contact-name" name="name" type="text" class="text-input" placeholder="Alex Rivera" required />
+            </div>
+            <div class="form-field">
+              <label for="contact-email">Email Address</label>
+              <input id="contact-email" name="email" type="email" class="text-input" placeholder="alex@example.com" required />
+            </div>
+          </div>
+
+          <div class="form-field">
+            <label for="contact-topic">Topic</label>
+            <select id="contact-topic" name="topic" class="select-input">
+              <option value="Feature Request">Feature Request / New Rendering Mode</option>
+              <option value="Bug Report">Technical Issue / Bug Report</option>
+              <option value="Educational & Press">Educational Use &amp; Editorial Inquiry</option>
+              <option value="Privacy & Legal">Privacy Policy or Rights Inquiry</option>
+              <option value="General">General Feedback</option>
+            </select>
+          </div>
+
+          <div class="form-field">
+            <label for="contact-message">Message</label>
+            <textarea
+              id="contact-message"
+              name="message"
+              rows="5"
+              class="textarea-input"
+              placeholder="Tell us what you're working on, or include your browser version if reporting an issue..."
+              required
+            ></textarea>
+          </div>
+
+          <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem;">
+            <button type="submit" class="btn btn-primary">Send Message</button>
+            <a id="direct-mailto-link" class="btn btn-ghost" href="mailto:hello@chromaglyph.studio?subject=ChromaGlyph%20Studio%20Inquiry">
+              Open in Email Client
+            </a>
+          </div>
+
+          <div id="contact-form-status" class="form-status" role="status" aria-live="polite"></div>
+        </form>
+      </div>
+
+      <aside style="display: flex; flex-direction: column; gap: 1.25rem;">
+        <div class="info-card">
+          <h3>Direct Email</h3>
+          <p>
+            Prefer standard email? Write directly to our studio desk:
+          </p>
+          <p style="margin-top: 0.25rem;">
+            <a href="mailto:hello@chromaglyph.studio" style="font-family: var(--font-mono); font-weight: 600;">
+              hello@chromaglyph.studio
+            </a>
+          </p>
+          <p style="font-size: 0.84rem; color: var(--text-muted);">
+            Typical response time: 1–2 business days (Monday–Friday).
+          </p>
+        </div>
+
+        <div class="info-card">
+          <h3>Reporting a Rendering Bug?</h3>
+          <p>To help us reproduce issues quickly, please mention:</p>
+          <ul>
+            <li>Your browser &amp; OS (e.g., Chrome 130 on Windows 11 or Safari on iOS).</li>
+            <li>Active rendering mode (Binary, ASCII, or Dots) and approximate cell size.</li>
+            <li>Source image format and dimensions (PNG, JPG, WebP).</li>
+          </ul>
+        </div>
+
+        <div class="info-card">
+          <h3>Privacy &amp; Data Requests</h3>
+          <p>
+            Because ChromaGlyph processes uploaded artwork strictly on your device, we do not store user photographs.
+            For questions regarding advertising cookies or GDPR/CCPA rights, please review our
+            <a href="/privacy">Privacy Policy</a> or include "Privacy Inquiry" in your subject line.
+          </p>
+        </div>
+      </aside>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div>
+          <a class="brand" href="/">
+            <img class="brand-mark" src="/assets/favicon.svg" alt="ChromaGlyph Studio logo" width="32" height="32" />
+            <span>ChromaGlyph Studio</span>
+          </a>
+          <p class="footer-brand-desc">
+            A modern, privacy-first web studio for generating color-true Binary (0/1), ASCII typography, and Halftone
+            dot artwork directly on HTML5 Canvas.
+          </p>
+        </div>
+
+        <div class="footer-col">
+          <h4>Studio</h4>
+          <ul>
+            <li><a href="/#studio">Interactive Canvas</a></li>
+            <li><a href="/gallery">Curated Gallery</a></li>
+            <li><a href="/?preset=neon-binary-matrix#studio">Binary 0/1 Mode</a></li>
+            <li><a href="/?preset=aurora-ascii-tapestry#studio">ASCII Art Mode</a></li>
+            <li><a href="/?preset=koi-hex-halftone#studio">Halftone Dots Mode</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h4>Learn</h4>
+          <ul>
+            <li><a href="/guides#binary-art">How Binary Art Works</a></li>
+            <li><a href="/guides#ascii-rendering">ASCII Optical Density</a></li>
+            <li><a href="/guides#halftone-dots">Halftone &amp; Dot Screening</a></li>
+            <li><a href="/guides#contrast-resolution">Contrast &amp; Resolution Tips</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h4>Company &amp; Legal</h4>
+          <ul>
+            <li><a href="/about">About ChromaGlyph</a></li>
+            <li><a href="/contact">Contact &amp; Support</a></li>
+            <li><a href="/privacy">Privacy Policy</a></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="footer-bottom">
+        <span>&copy; 2026 ChromaGlyph Studio. All image processing runs locally in your browser.</span>
+        <span>Built with semantic HTML5, CSS3 &amp; Canvas 2D</span>
+      </div>
+    </div>
+  </footer>
+
+  <script type="module" src="/src/js/theme.js"></script>
+  <script type="module">
+    const form = document.getElementById('contact-form');
+    const statusEl = document.getElementById('contact-form-status');
+    const mailtoLink = document.getElementById('direct-mailto-link');
+
+    if (form && statusEl) {
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const name = form.elements.name.value.trim();
+        const email = form.elements.email.value.trim();
+        const topic = form.elements.topic.value;
+        const message = form.elements.message.value.trim();
+
+        if (!name || !email || !email.includes('@') || message.length < 10) {
+          statusEl.className = 'form-status';
+          statusEl.style.display = 'block';
+          statusEl.style.background = 'rgba(244, 114, 182, 0.12)';
+          statusEl.style.color = 'var(--text)';
+          statusEl.style.border = '1px solid rgba(244, 114, 182, 0.35)';
+          statusEl.textContent = 'Please provide your name, a valid email address, and a message of at least 10 characters.';
+          return;
+        }
+
+        const subject = encodeURIComponent(`[ChromaGlyph] ${topic} — from ${name}`);
+        const body = encodeURIComponent(`From: ${name} (${email})\nTopic: ${topic}\n\n${message}`);
+        if (mailtoLink) {
+          mailtoLink.href = `mailto:hello@chromaglyph.studio?subject=${subject}&body=${body}`;
+        }
+
+        statusEl.className = 'form-status success';
+        statusEl.style = '';
+        statusEl.textContent = `Thank you, ${name}. Your inquiry under "${topic}" has been prepared. Click "Open in Email Client" if you would also like to send a direct copy from your mail app.`;
+        form.reset();
+      });
+    }
+  </script>
+</body>
+</html>

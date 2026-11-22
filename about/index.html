@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>About ChromaGlyph Studio — Privacy-First Computational Art &amp; Typography</title>
+  <meta
+    name="description"
+    content="Learn about ChromaGlyph Studio's mission, browser-native HTML5 Canvas image processing architecture, zero-upload privacy commitment, and educational focus on Binary, ASCII, and Halftone graphics."
+  />
+  <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&family=Space+Grotesk:wght@600;700&display=swap"
+    rel="stylesheet"
+  />
+  <link rel="stylesheet" href="/src/css/styles.css" />
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4588627708948117" crossorigin="anonymous"></script>
+  <script>
+    (function () {
+      var t = localStorage.getItem('chromaglyph_theme');
+      if (t === 'light' || t === 'dark') {
+        document.documentElement.setAttribute('data-theme', t);
+      } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
+        document.documentElement.setAttribute('data-theme', 'light');
+      }
+    })();
+  </script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="brand" href="/">
+        <img class="brand-mark" src="/assets/favicon.svg" alt="ChromaGlyph Studio logo" width="34" height="34" />
+        <span>
+          ChromaGlyph
+          <span class="brand-sub">Visual Art Studio</span>
+        </span>
+      </a>
+
+      <nav aria-label="Primary navigation">
+        <ul id="primary-nav-links" class="nav-links">
+          <li><a href="/">Studio</a></li>
+          <li><a href="/gallery">Gallery</a></li>
+          <li><a href="/guides">Guides</a></li>
+          <li><a href="/about" aria-current="page">About</a></li>
+          <li><a href="/contact">Contact</a></li>
+          <li><a href="/privacy">Privacy</a></li>
+        </ul>
+      </nav>
+
+      <div class="header-actions">
+        <button id="theme-toggle" class="icon-btn" type="button" aria-label="Toggle color theme"></button>
+        <button
+          id="mobile-nav-toggle"
+          class="icon-btn mobile-nav-toggle"
+          type="button"
+          aria-expanded="false"
+          aria-controls="primary-nav-links"
+          aria-label="Open navigation menu"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="3" y1="6" x2="21" y2="6" />
+            <line x1="3" y1="12" x2="21" y2="12" />
+            <line x1="3" y1="18" x2="21" y2="18" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="page-hero">
+      <div class="container">
+        <p class="eyebrow">About the Studio</p>
+        <h1>Craft-First Image-to-Art Tools Built for the Open Web</h1>
+        <p>
+          ChromaGlyph Studio was created to bridge the gap between nostalgic command-line ASCII converters and modern
+          creative-coding workflows—delivering real-color typographic and halftone synthesis directly in your browser.
+        </p>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <div class="prose" style="margin: 0 auto;">
+          <section>
+            <h2>Our Mission</h2>
+            <p>
+              Most online ASCII and halftone converters treat image transformation as a novelty gimmick: cluttered
+              pages, monochrome outputs that strip away photographic mood, intrusive watermarks, or opaque remote
+              upload endpoints. We built <strong>ChromaGlyph Studio</strong> with a different standard.
+            </p>
+            <p>
+              Whether you are a graphic designer crafting poster textures, a software engineer illustrating technical
+              documentation, a musician designing album artwork, or a student learning how luminance quantization and
+              ordered dithering work, ChromaGlyph gives you studio-grade controls, transparent educational documentation,
+              and crisp watermark-free exports at zero cost.
+            </p>
+          </section>
+
+          <section>
+            <h2>Core Design Principles</h2>
+            <div class="cards-2" style="margin: 1.5rem 0;">
+              <div class="info-card">
+                <h3>1. Privacy by Architecture</h3>
+                <p>
+                  Images you drag onto ChromaGlyph never leave your device. All downsampling, Rec. 709 luminance math,
+                  Bayer dithering, and 2× HiDPI PNG encoding happen inside your browser's local memory.
+                </p>
+              </div>
+              <div class="info-card">
+                <h3>2. True RGB Fidelity</h3>
+                <p>
+                  Separating luminance structure from RGB color lets Binary <code>0/1</code> bitstreams, ASCII ramps,
+                  and Halftone circles retain the emotional richness of your source photography.
+                </p>
+              </div>
+              <div class="info-card">
+                <h3>3. Interactive Tactile Feedback</h3>
+                <p>
+                  Every slider updates the canvas in milliseconds, and our 60fps cursor spotlight lets you inspect
+                  individual glyphs, reveal the original photograph underneath, or explore chromatic luminosity.
+                </p>
+              </div>
+              <div class="info-card">
+                <h3>4. Open Educational Depth</h3>
+                <p>
+                  We pair our interactive studio with curated visual breakdowns in the <a href="/gallery">Gallery</a>
+                  and practical graphics engineering notes in our <a href="/guides">Guides</a> so creators understand
+                  <em>why</em> each setting works.
+                </p>
+              </div>
+            </div>
+          </section>
+
+          <section>
+            <h2>How the Technology Works Under the Hood</h2>
+            <p>
+              ChromaGlyph Studio is intentionally engineered with clean web standards—semantic HTML5, modern CSS custom
+              properties for instant Dark/Light theming, and modular ES2022 JavaScript operating directly on the HTML5
+              Canvas 2D API. Avoiding heavy opaque binary dependencies keeps load times fast, maintains crisp
+              accessibility across desktop and mobile viewports, and ensures deterministic rendering across Chrome,
+              Firefox, Safari, and Edge.
+            </p>
+            <p>
+              Have feedback, a feature idea, or a bug report? Reach out anytime through our
+              <a href="/contact">Contact page</a>—every message helps refine the studio.
+            </p>
+          </section>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div>
+          <a class="brand" href="/">
+            <img class="brand-mark" src="/assets/favicon.svg" alt="ChromaGlyph Studio logo" width="32" height="32" />
+            <span>ChromaGlyph Studio</span>
+          </a>
+          <p class="footer-brand-desc">
+            A modern, privacy-first web studio for generating color-true Binary (0/1), ASCII typography, and Halftone
+            dot artwork directly on HTML5 Canvas.
+          </p>
+        </div>
+
+        <div class="footer-col">
+          <h4>Studio</h4>
+          <ul>
+            <li><a href="/#studio">Interactive Canvas</a></li>
+            <li><a href="/gallery">Curated Gallery</a></li>
+            <li><a href="/?preset=neon-binary-matrix#studio">Binary 0/1 Mode</a></li>
+            <li><a href="/?preset=aurora-ascii-tapestry#studio">ASCII Art Mode</a></li>
+            <li><a href="/?preset=koi-hex-halftone#studio">Halftone Dots Mode</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h4>Learn</h4>
+          <ul>
+            <li><a href="/guides#binary-art">How Binary Art Works</a></li>
+            <li><a href="/guides#ascii-rendering">ASCII Optical Density</a></li>
+            <li><a href="/guides#halftone-dots">Halftone &amp; Dot Screening</a></li>
+            <li><a href="/guides#contrast-resolution">Contrast &amp; Resolution Tips</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h4>Company &amp; Legal</h4>
+          <ul>
+            <li><a href="/about">About ChromaGlyph</a></li>
+            <li><a href="/contact">Contact &amp; Support</a></li>
+            <li><a href="/privacy">Privacy Policy</a></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="footer-bottom">
+        <span>&copy; 2026 ChromaGlyph Studio. All image processing runs locally in your browser.</span>
+        <span>Built with semantic HTML5, CSS3 &amp; Canvas 2D</span>
+      </div>
+    </div>
+  </footer>
+
+  <script type="module" src="/src/js/theme.js"></script>
+</body>
+</html>

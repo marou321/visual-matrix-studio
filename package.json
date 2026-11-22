@@ -1,0 +1,14 @@
+{
+  "name": "chromaglyph-studio",
+  "version": "1.0.0",
+  "description": "ChromaGlyph Studio — Interactive Color-True Binary (0/1), ASCII, and Halftone Dots Image-to-Art Generator Studio.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node server.mjs"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="cg-grad" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#38BDF8" />
+      <stop offset="50%" stop-color="#818CF8" />
+      <stop offset="100%" stop-color="#F472B6" />
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#0B0F1A" />
+  <rect x="2" y="2" width="60" height="60" rx="12" stroke="url(#cg-grad)" stroke-opacity="0.45" stroke-width="2" />
+  <circle cx="20" cy="20" r="6" fill="#38BDF8" />
+  <circle cx="44" cy="20" r="4.5" fill="#818CF8" />
+  <circle cx="20" cy="44" r="4.5" fill="#F472B6" />
+  <text x="34" y="50" font-family="monospace" font-weight="700" font-size="22" fill="url(#cg-grad)">1</text>
+  <text x="27" y="34" font-family="monospace" font-weight="700" font-size="16" fill="#E2E8F0">#</text>
+</svg>
