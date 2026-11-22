@@ -136,6 +136,33 @@
           </section>
 
           <section>
+            <h2>Who Uses ChromaGlyph Studio?</h2>
+            <p>
+              Because our rendering engine runs instantly without accounts, software downloads, or cloud render queues,
+              ChromaGlyph serves a diverse community of visual thinkers and builders:
+            </p>
+            <ul>
+              <li>
+                <strong>Graphic Designers &amp; Art Directors:</strong> Prototype editorial halftone posters, risograph-inspired
+                textures, and retro-digital album covers at 2× HiDPI PNG quality before bringing assets into layout software.
+              </li>
+              <li>
+                <strong>Software Engineers &amp; Technical Writers:</strong> Generate crisp monospace ASCII banners for
+                documentation, CLI welcome screens, README headers, and developer portfolios using one-click plain-text copy.
+              </li>
+              <li>
+                <strong>Educators &amp; Computer Graphics Students:</strong> Demonstrate core digital imaging concepts—including
+                Rec. 709 relative luminance, Bayer 4×4 ordered dithering, amplitude-modulated halftone screening, and optical
+                glyph density—with real-time visual feedback in the classroom.
+              </li>
+              <li>
+                <strong>Photographers &amp; Creative Coders:</strong> Reinterpret portraits, macro botanicals, and
+                architectural light studies into chromatic typographic mosaics while preserving original RGB color harmony.
+              </li>
+            </ul>
+          </section>
+
+          <section>
             <h2>How the Technology Works Under the Hood</h2>
             <p>
               ChromaGlyph Studio is intentionally engineered with clean web standards—semantic HTML5, modern CSS custom
@@ -143,6 +170,22 @@
               Canvas 2D API. Avoiding heavy opaque binary dependencies keeps load times fast, maintains crisp
               accessibility across desktop and mobile viewports, and ensures deterministic rendering across Chrome,
               Firefox, Safari, and Edge.
+            </p>
+            <p>
+              Every transformation begins with area-averaged block sampling rather than single-pixel point sampling,
+              eliminating shimmering moiré noise on intricate textures. Luminance is then calculated with the sRGB
+              <strong>ITU-R BT.709</strong> formula (<code>0.2126 R + 0.7152 G + 0.0722 B</code>) so bright greens and
+              deep blues carry natural photographic weight across all three rendering modes.
+            </p>
+          </section>
+
+          <section>
+            <h2>Editorial &amp; Accessibility Commitment</h2>
+            <p>
+              We design ChromaGlyph to be readable, respectful, and genuinely educational. All pages maintain clear
+              semantic headings, keyboard-accessible controls, high-contrast Dark and Light themes, and transparent
+              documentation in our <a href="/guides">Digital Graphics Guides</a> and <a href="/gallery">Curated Gallery</a>.
+              We never use deceptive pop-ups, artificial engagement loops, or watermarks on user exports.
             </p>
             <p>
               Have feedback, a feature idea, or a bug report? Reach out anytime through our

@@ -1,9 +1,11 @@
 /**
- * Renders Curated Gallery Cards (on Home & /gallery) and powers filtering + lightbox inspector.
+ * Hydrates or renders Curated Gallery Cards (on Home & /gallery) and powers filtering + lightbox inspector.
+ * Supports progressive enhancement: if semantic HTML cards with [data-gallery-id] are already present
+ * in the document, they are hydrated in place with live Canvas rendering and hover spotlight.
  */
 
 import { GALLERY_ITEMS } from './gallery-data.js';
-import { loadSampleImage, getSampleById } from './samples.js';
+import { loadSampleImage } from './samples.js';
 import { renderArtwork, compositeWithSpotlight } from './renderer.js';
 
 function badgeClass(mode) {
@@ -16,6 +18,7 @@ function createCardElement(item) {
   const article = document.createElement('article');
   article.className = 'gallery-card';
   article.dataset.mode = item.mode;
+  article.dataset.galleryId = item.id;
 
   const specsHtml = item.techNotes
     .map((n) => `<span class="spec-chip">${n.label}: <strong>${n.value}</strong></span>`)
@@ -160,31 +163,48 @@ export async function mountGallery(containerId, options = {}) {
     ? GALLERY_ITEMS.filter((item) => item.featured)
     : GALLERY_ITEMS;
 
-  container.innerHTML = '';
+  const existingCards = new Map();
+  container.querySelectorAll('[data-gallery-id]').forEach((el) => {
+    existingCards.set(el.dataset.galleryId, el);
+  });
+
+  if (existingCards.size === 0) {
+    container.innerHTML = '';
+  }
+
   const cardEntries = [];
 
   for (const item of items) {
-    const card = createCardElement(item);
-    container.appendChild(card);
+    let card = existingCards.get(item.id);
+    if (!card) {
+      card = createCardElement(item);
+      container.appendChild(card);
+    }
 
     const visual = card.querySelector('.gallery-visual');
-    const canvas = visual.querySelector('canvas');
+    const canvas = visual ? visual.querySelector('canvas') : null;
     const inspectBtn = card.querySelector('.js-inspect-btn');
 
     const handleInspect = () => openInspector(item);
-    visual.addEventListener('click', handleInspect);
-    visual.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        handleInspect();
-      }
-    });
-    inspectBtn.addEventListener('click', handleInspect);
+    if (visual) {
+      visual.addEventListener('click', handleInspect);
+      visual.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          handleInspect();
+        }
+      });
+    }
+    if (inspectBtn) {
+      inspectBtn.addEventListener('click', handleInspect);
+    }
 
-    cardEntries.push({ item, card, canvas });
+    if (canvas) {
+      cardEntries.push({ item, card, canvas });
+    }
   }
 
-  // Render thumbnails asynchronously without blocking initial paint
+  // Render crisp canvases asynchronously without blocking initial paint
   for (const entry of cardEntries) {
     const img = await loadSampleImage(entry.item.sampleId);
     const result = renderArtwork(img, entry.item.settings, { maxDimension: 620 });
@@ -193,7 +213,7 @@ export async function mountGallery(containerId, options = {}) {
     entry.canvas.height = result.height;
     ctx.drawImage(result.baseCanvas, 0, 0);
 
-    // Subtle interactive spotlight right on gallery cards!
+    // Subtle interactive spotlight right on gallery cards
     const pointer = { active: false, x: 0, y: 0 };
     const cardSpotlightCfg = { ...entry.item.settings, spotlightRadius: 85 };
 
@@ -211,7 +231,7 @@ export async function mountGallery(containerId, options = {}) {
     });
   }
 
-  // Filter buttons if present (on /gallery page)
+  // Mode filter buttons (on /gallery page)
   const filterButtons = document.querySelectorAll('[data-gallery-filter]');
   if (filterButtons.length > 0) {
     filterButtons.forEach((btn) => {
@@ -231,7 +251,7 @@ export async function mountGallery(containerId, options = {}) {
   }
 }
 
-// Auto-mount if dedicated gallery page container exists
+// Auto-hydrate/mount when DOM is ready
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => {
     if (document.getElementById('full-gallery-grid')) {

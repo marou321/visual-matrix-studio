@@ -91,9 +91,16 @@ const server = http.createServer(async (req, res) => {
     <p class="eyebrow">404 Error</p>
     <h1 style="margin: 0.75rem 0 1rem;">Page not found</h1>
     <p style="max-width: 48ch; margin: 0 auto 2rem; color: var(--text-muted);">
-      The page you requested does not exist. Return to the ChromaGlyph Studio to generate Binary, ASCII, or Halftone artwork.
+      The page you requested does not exist. Return to ChromaGlyph Studio to generate Binary, ASCII, or Halftone artwork, or explore our gallery and guides.
     </p>
-    <a class="btn btn-primary" href="/">Back to Studio</a>
+    <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:0.75rem;">
+      <a class="btn btn-primary" href="/">Back to Studio</a>
+      <a class="btn btn-secondary" href="/gallery">Gallery</a>
+      <a class="btn btn-secondary" href="/guides">Guides</a>
+      <a class="btn btn-ghost" href="/about">About</a>
+      <a class="btn btn-ghost" href="/contact">Contact</a>
+      <a class="btn btn-ghost" href="/privacy">Privacy</a>
+    </div>
   </main>
 </body>
 </html>`);

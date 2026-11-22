@@ -23,6 +23,21 @@
   />
   <link rel="stylesheet" href="/src/css/styles.css" />
   <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4588627708948117" crossorigin="anonymous"></script>
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "ChromaGlyph Studio",
+      "applicationCategory": "DesignApplication",
+      "operatingSystem": "Any",
+      "description": "Browser-native interactive visual image-to-art studio for Color-True Binary (0/1), ASCII typography, and Halftone Dots rendering with 2x HiDPI PNG export.",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    }
+  </script>
   <script>
     (function () {
       var t = localStorage.getItem('chromaglyph_theme');
@@ -448,7 +463,131 @@
         </div>
 
         <div id="featured-gallery-grid" class="gallery-grid">
-          <!-- Rendered cleanly by gallery-renderer.js -->
+          <article class="gallery-card" data-mode="binary" data-gallery-id="neon-binary-matrix">
+            <div class="gallery-visual" role="button" tabindex="0" aria-label="Inspect Cyber Rim-Light Bitstream artwork">
+              <canvas width="640" height="480" aria-label="Cyber Rim-Light Bitstream rendered in Binary 0/1 mode"></canvas>
+              <div class="gallery-visual-overlay">
+                <span class="btn btn-sm btn-secondary">Inspect Artwork</span>
+              </div>
+            </div>
+            <div class="gallery-card-body">
+              <div class="gallery-card-head">
+                <h3 class="gallery-card-title">Cyber Rim-Light Bitstream</h3>
+                <span class="badge badge-binary">Binary 0/1</span>
+              </div>
+              <div class="tech-specs" aria-label="Technical settings used"><span class="spec-chip">Grid: <strong>9px · 1.0x</strong></span><span class="spec-chip">Threshold: <strong>102 / 255</strong></span><span class="spec-chip">Dither: <strong>Bayer 4×4</strong></span><span class="spec-chip">Contrast: <strong>+26%</strong></span><span class="spec-chip">Color: <strong>True RGB</strong></span></div>
+              <p class="gallery-card-desc">Because this studio portrait relies on razor-sharp cyan and magenta rim lighting against a deep black backdrop, a low threshold (102) paired with 4×4 Bayer ordered dithering transitions cleanly from dense bright &quot;1&quot; bits on the cheekbone into receding &quot;0&quot; bits across the shadowed core—all while preserving the original RGB neon hues.</p>
+              <div class="gallery-card-actions">
+                <button type="button" class="btn btn-sm btn-ghost js-inspect-btn">Inspect Details</button>
+                <a class="btn btn-sm btn-primary" href="/?preset=neon-binary-matrix#studio">Open in Studio</a>
+              </div>
+            </div>
+          </article>
+
+          <article class="gallery-card" data-mode="ascii" data-gallery-id="aurora-ascii-tapestry">
+            <div class="gallery-visual" role="button" tabindex="0" aria-label="Inspect Aurora Chromatic ASCII artwork">
+              <canvas width="640" height="480" aria-label="Aurora Chromatic ASCII rendered in ASCII Art mode"></canvas>
+              <div class="gallery-visual-overlay">
+                <span class="btn btn-sm btn-secondary">Inspect Artwork</span>
+              </div>
+            </div>
+            <div class="gallery-card-body">
+              <div class="gallery-card-head">
+                <h3 class="gallery-card-title">Aurora Chromatic ASCII</h3>
+                <span class="badge badge-ascii">ASCII Art</span>
+              </div>
+              <div class="tech-specs" aria-label="Technical settings used"><span class="spec-chip">Grid: <strong>9px · 1.0x</strong></span><span class="spec-chip">Ramp: <strong>@#%*+=-:.</strong></span><span class="spec-chip">Contrast: <strong>+22%</strong></span><span class="spec-chip">Saturation: <strong>128%</strong></span><span class="spec-chip">Color: <strong>True RGB</strong></span></div>
+              <p class="gallery-card-desc">Northern lights contain wide mid-tone gradients that collapse under harsh binary thresholds. Mapping Rec. 709 luminance onto the 10-step classic ASCII ramp (@#%*+=-:.) lets dense &quot;@&quot; and &quot;#&quot; glyphs anchor the snow-covered ridge and bright emerald curtains, while &quot;:&quot; and &quot;.&quot; softly render the faint starry sky.</p>
+              <div class="gallery-card-actions">
+                <button type="button" class="btn btn-sm btn-ghost js-inspect-btn">Inspect Details</button>
+                <a class="btn btn-sm btn-primary" href="/?preset=aurora-ascii-tapestry#studio">Open in Studio</a>
+              </div>
+            </div>
+          </article>
+
+          <article class="gallery-card" data-mode="dots" data-gallery-id="koi-hex-halftone">
+            <div class="gallery-visual" role="button" tabindex="0" aria-label="Inspect Midnight Koi Hex-Halftone artwork">
+              <canvas width="640" height="480" aria-label="Midnight Koi Hex-Halftone rendered in Dots / Halftone mode"></canvas>
+              <div class="gallery-visual-overlay">
+                <span class="btn btn-sm btn-secondary">Inspect Artwork</span>
+              </div>
+            </div>
+            <div class="gallery-card-body">
+              <div class="gallery-card-head">
+                <h3 class="gallery-card-title">Midnight Koi Hex-Halftone</h3>
+                <span class="badge badge-dots">Dots / Halftone</span>
+              </div>
+              <div class="tech-specs" aria-label="Technical settings used"><span class="spec-chip">Grid: <strong>10px Hex</strong></span><span class="spec-chip">Response: <strong>Size by Luma</strong></span><span class="spec-chip">Dot Scale: <strong>0.96×</strong></span><span class="spec-chip">Saturation: <strong>135%</strong></span><span class="spec-chip">Color: <strong>True RGB</strong></span></div>
+              <p class="gallery-card-desc">Enabling the staggered hexagonal grid offsets alternating rows by half a cell—eliminating harsh horizontal banding along the curved spine of the Koi fish. Bright vermilion scales expand into full-radius dots while deep indigo water recedes into delicate pinpoints.</p>
+              <div class="gallery-card-actions">
+                <button type="button" class="btn btn-sm btn-ghost js-inspect-btn">Inspect Details</button>
+                <a class="btn btn-sm btn-primary" href="/?preset=koi-hex-halftone#studio">Open in Studio</a>
+              </div>
+            </div>
+          </article>
+
+          <article class="gallery-card" data-mode="ascii" data-gallery-id="botanical-extended-ascii">
+            <div class="gallery-visual" role="button" tabindex="0" aria-label="Inspect Tropical Petal Micro-Glyphs artwork">
+              <canvas width="640" height="480" aria-label="Tropical Petal Micro-Glyphs rendered in ASCII Art mode"></canvas>
+              <div class="gallery-visual-overlay">
+                <span class="btn btn-sm btn-secondary">Inspect Artwork</span>
+              </div>
+            </div>
+            <div class="gallery-card-body">
+              <div class="gallery-card-head">
+                <h3 class="gallery-card-title">Tropical Petal Micro-Glyphs</h3>
+                <span class="badge badge-ascii">ASCII Art</span>
+              </div>
+              <div class="tech-specs" aria-label="Technical settings used"><span class="spec-chip">Grid: <strong>8px · 0.95x</strong></span><span class="spec-chip">Ramp: <strong>Extended 70ch</strong></span><span class="spec-chip">Contrast: <strong>+16%</strong></span><span class="spec-chip">Palette: <strong>Vibrant RGB</strong></span><span class="spec-chip">Backdrop: <strong>Pure Black</strong></span></div>
+              <p class="gallery-card-desc">Macro botanical photography benefits from tighter 8px cells and the extended 70-character optical density ramp. Fine shading transitions across overlapping coral, magenta, and turquoise petals stay legible without over-compressing delicate highlights.</p>
+              <div class="gallery-card-actions">
+                <button type="button" class="btn btn-sm btn-ghost js-inspect-btn">Inspect Details</button>
+                <a class="btn btn-sm btn-primary" href="/?preset=botanical-extended-ascii#studio">Open in Studio</a>
+              </div>
+            </div>
+          </article>
+
+          <article class="gallery-card" data-mode="dots" data-gallery-id="brutalist-paper-halftone">
+            <div class="gallery-visual" role="button" tabindex="0" aria-label="Inspect Offset Print Brutalist Study artwork">
+              <canvas width="640" height="480" aria-label="Offset Print Brutalist Study rendered in Dots / Halftone mode"></canvas>
+              <div class="gallery-visual-overlay">
+                <span class="btn btn-sm btn-secondary">Inspect Artwork</span>
+              </div>
+            </div>
+            <div class="gallery-card-body">
+              <div class="gallery-card-head">
+                <h3 class="gallery-card-title">Offset Print Brutalist Study</h3>
+                <span class="badge badge-dots">Dots / Halftone</span>
+              </div>
+              <div class="tech-specs" aria-label="Technical settings used"><span class="spec-chip">Grid: <strong>11px Hex</strong></span><span class="spec-chip">Response: <strong>Size by Darkness</strong></span><span class="spec-chip">Canvas: <strong>Gallery Paper</strong></span><span class="spec-chip">Contrast: <strong>+30%</strong></span><span class="spec-chip">Color: <strong>True RGB</strong></span></div>
+              <p class="gallery-card-desc">Modeled after mid-century architectural lithographs, this recipe switches to a light Gallery Paper canvas and reverses dot sizing to &quot;Size by Darkness.&quot; Deep concrete shadows swell into bold ink circles while sunlit ledges open up into airy white space.</p>
+              <div class="gallery-card-actions">
+                <button type="button" class="btn btn-sm btn-ghost js-inspect-btn">Inspect Details</button>
+                <a class="btn btn-sm btn-primary" href="/?preset=brutalist-paper-halftone#studio">Open in Studio</a>
+              </div>
+            </div>
+          </article>
+
+          <article class="gallery-card" data-mode="binary" data-gallery-id="astronaut-binary-visor">
+            <div class="gallery-visual" role="button" tabindex="0" aria-label="Inspect Nebula Visor Binary Telemetry artwork">
+              <canvas width="640" height="480" aria-label="Nebula Visor Binary Telemetry rendered in Binary 0/1 mode"></canvas>
+              <div class="gallery-visual-overlay">
+                <span class="btn btn-sm btn-secondary">Inspect Artwork</span>
+              </div>
+            </div>
+            <div class="gallery-card-body">
+              <div class="gallery-card-head">
+                <h3 class="gallery-card-title">Nebula Visor Binary Telemetry</h3>
+                <span class="badge badge-binary">Binary 0/1</span>
+              </div>
+              <div class="tech-specs" aria-label="Technical settings used"><span class="spec-chip">Grid: <strong>8px · 1.0x</strong></span><span class="spec-chip">Threshold: <strong>94 / 255</strong></span><span class="spec-chip">Underlay: <strong>8% Original</strong></span><span class="spec-chip">Dither: <strong>Bayer 4×4</strong></span><span class="spec-chip">Color: <strong>True RGB</strong></span></div>
+              <p class="gallery-card-desc">Adding a subtle 8% dimmed photographic underlay beneath dense 8px binary digits preserves the spherical glass sheen of the astronaut visor while letting fiery amber and turquoise nebula reflections read like live spacecraft telemetry.</p>
+              <div class="gallery-card-actions">
+                <button type="button" class="btn btn-sm btn-ghost js-inspect-btn">Inspect Details</button>
+                <a class="btn btn-sm btn-primary" href="/?preset=astronaut-binary-visor#studio">Open in Studio</a>
+              </div>
+            </div>
+          </article>
         </div>
       </div>
     </section>
@@ -511,6 +650,43 @@
               <li>Maintains crisp vector-grade circular edges at any export resolution.</li>
             </ul>
           </article>
+        </div>
+
+        <div class="data-table-wrap" style="margin-top: 2.25rem;">
+          <table class="data-table" aria-label="Comparison of Binary, ASCII, and Halftone Dots rendering modes">
+            <thead>
+              <tr>
+                <th>Rendering Mode</th>
+                <th>Visual Encoding Primitive</th>
+                <th>Tonal Gradation Method</th>
+                <th>Best Source Photography</th>
+                <th>Export Formats</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Binary (0/1)</strong></td>
+                <td>Two digits (<code>1</code> and <code>0</code>) painted in real cell RGB</td>
+                <td>Rec. 709 threshold + optional Bayer 4×4 ordered dithering</td>
+                <td>Neon portraits, silhouettes, dark studio backdrops</td>
+                <td>1× / 2× PNG &amp; Plain Text</td>
+              </tr>
+              <tr>
+                <td><strong>ASCII Art</strong></td>
+                <td>Monospace glyph ramps ranked by optical ink coverage</td>
+                <td>Continuous luminance quantization across 6 to 70 steps</td>
+                <td>Landscapes, macro florals, soft sky &amp; skin gradients</td>
+                <td>1× / 2× PNG &amp; Plain Text</td>
+              </tr>
+              <tr>
+                <td><strong>Dots / Halftone</strong></td>
+                <td>Anti-aliased circles on Square or 60° Hexagonal grids</td>
+                <td>Amplitude-modulated dot radius &amp; harmonic opacity</td>
+                <td>Architecture, editorial posters, bold color photography</td>
+                <td>1× / 2× HiDPI PNG</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </section>
