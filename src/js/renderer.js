@@ -1,15 +1,15 @@
 /**
- * ChromaGlyph Studio — Non-Blocking, Freeze-Proof Rendering Engine
+ * ChromaGlyph Studio — Authentic, Non-Blocking Multi-Mode Rendering Engine
  * Modes:
  *  - binary:    0/1 character art mapped by luminance threshold (with optional Bayer 4x4 dithering)
  *  - ascii:     Multi-ramp character art mapped by optical density & real RGB or curated palettes
  *  - dots:      Halftone dot matrix with radius/opacity response and square or hexagonal grids
- *  - aquarelle: Direct-pixel wet-on-wet watercolor wash + paper grain + <=280 soft pigment blooms
- *  - outline:   Cached color-aware Sobel + 8-way NMS + direct ImageData contour stamping over #FFFFFF interior
+ *  - aquarelle: Edge-preserving bilateral watercolor washes (distinct color regions, darker backrun rims & paper tooth)
+ *  - outline:   Geometric line-first contour simplification (RDP polylines + clean hollow polygon fallback on #FFFFFF)
  *
  * Anti-freeze architecture:
- *  - Intermediate pixel/edge caching for Aquarelle & Outline (dragging sliders reuses cached buffers in <4ms)
- *  - Direct ImageData rendering for Outline & Aquarelle base (zero Skia giant compound-path tessellation freezes)
+ *  - Intermediate caches for Aquarelle bilateral regions & Outline Sobel/NMS edge fields (< 4ms slider drags)
+ *  - Zero giant Skia compound paths (strictly chunked <= 24 segments / <= 64 dots per beginPath())
  *  - Hard cell budgets for Binary, ASCII, and Dots modes
  *  - Pooled offscreen scratch canvases & AABB-culled 60fps cursor spotlight
  */
@@ -97,7 +97,6 @@ const BAYER_4X4 = [
   [15 / 16 - 0.5, 7 / 16 - 0.5, 13 / 16 - 0.5, 5 / 16 - 0.5]
 ];
 
-// Reusable offscreen scratch canvas pool
 const scratchPool = new Map();
 
 function getScratchCanvas(key, w, h) {
@@ -113,9 +112,9 @@ function getScratchCanvas(key, w, h) {
   return c;
 }
 
-// Single-slot intermediate caches for Aquarelle & Outline so slider drags never recompute source pixel/edge passes
+// Intermediate caches for responsive, non-blocking slider updates
 let outlineEdgeCache = null;
-let aquarelleSourceCache = null;
+let aquarelleRegionCache = null;
 
 function clamp255(v) {
   return v < 0 ? 0 : v > 255 ? 255 : v;
@@ -237,23 +236,109 @@ function smoothField(srcR, srcG, srcB, w, h, radius) {
   return { r: outR, g: outG, b: outB };
 }
 
-// Fast deterministic paper tooth noise table (64x64 tiled via bitwise mask — zero allocations)
+/**
+ * Fast separable edge-preserving bilateral filter (rational range kernel — zero Math.exp calls).
+ * Smooths interior watercolor regions into clean flat washes WITHOUT bleeding/mushing across color edges!
+ */
+function bilateralWashFilter(srcR, srcG, srcB, w, h, radius, colorSigma) {
+  const len = w * h;
+  const invSigma2 = 1 / Math.max(120, colorSigma * colorSigma);
+  const tmpR = new Float32Array(len);
+  const tmpG = new Float32Array(len);
+  const tmpB = new Float32Array(len);
+  const outR = new Float32Array(len);
+  const outG = new Float32Array(len);
+  const outB = new Float32Array(len);
+
+  // Horizontal edge-preserving pass
+  for (let y = 0; y < h; y++) {
+    const rowOff = y * w;
+    for (let x = 0; x < w; x++) {
+      const ci = rowOff + x;
+      const cr = srcR[ci];
+      const cg = srcG[ci];
+      const cb = srcB[ci];
+      let sr = cr;
+      let sg = cg;
+      let sb = cb;
+      let wSum = 1;
+      const x0 = x - radius < 0 ? 0 : x - radius;
+      const x1 = x + radius >= w ? w - 1 : x + radius;
+      for (let k = x0; k <= x1; k++) {
+        if (k === x) continue;
+        const i = rowOff + k;
+        const dr = srcR[i] - cr;
+        const dg = srcG[i] - cg;
+        const db = srcB[i] - cb;
+        const dist2 = dr * dr + dg * dg + db * db;
+        const weight = 1 / (1 + dist2 * invSigma2);
+        sr += srcR[i] * weight;
+        sg += srcG[i] * weight;
+        sb += srcB[i] * weight;
+        wSum += weight;
+      }
+      tmpR[ci] = sr / wSum;
+      tmpG[ci] = sg / wSum;
+      tmpB[ci] = sb / wSum;
+    }
+  }
+
+  // Vertical edge-preserving pass
+  for (let y = 0; y < h; y++) {
+    const y0 = y - radius < 0 ? 0 : y - radius;
+    const y1 = y + radius >= h ? h - 1 : y + radius;
+    const rowOff = y * w;
+    for (let x = 0; x < w; x++) {
+      const ci = rowOff + x;
+      const cr = tmpR[ci];
+      const cg = tmpG[ci];
+      const cb = tmpB[ci];
+      let sr = cr;
+      let sg = cg;
+      let sb = cb;
+      let wSum = 1;
+      for (let k = y0; k <= y1; k++) {
+        if (k === y) continue;
+        const i = k * w + x;
+        const dr = tmpR[i] - cr;
+        const dg = tmpG[i] - cg;
+        const db = tmpB[i] - cb;
+        const dist2 = dr * dr + dg * dg + db * db;
+        const weight = 1 / (1 + dist2 * invSigma2);
+        sr += tmpR[i] * weight;
+        sg += tmpG[i] * weight;
+        sb += tmpB[i] * weight;
+        wSum += weight;
+      }
+      outR[ci] = sr / wSum;
+      outG[ci] = sg / wSum;
+      outB[ci] = sb / wSum;
+    }
+  }
+
+  return { r: outR, g: outG, b: outB };
+}
+
+// Fast deterministic cold-press watercolor paper tooth table (64x64 tiled via bitwise mask)
 const PAPER_NOISE_64 = (() => {
   const arr = new Int8Array(64 * 64);
   const rand = mulberry32(42197);
   for (let y = 0; y < 64; y++) {
     for (let x = 0; x < 64; x++) {
-      const wave = Math.sin(x * 0.29 + y * 0.1) * 4 + Math.cos(y * 0.31 - x * 0.08) * 3;
-      arr[(y << 6) | x] = Math.round(wave + (rand() - 0.5) * 14);
+      const fiber = Math.sin(x * 0.29 + y * 0.11) * 4 + Math.cos(y * 0.31 - x * 0.09) * 3;
+      const tooth = (rand() - 0.5) * 16;
+      arr[(y << 6) | x] = Math.round(fiber + tooth);
     }
   }
   return arr;
 })();
 
 /**
- * Non-Blocking Aquarelle (Watercolor) Rendering Mode
- * Stage 1: Direct ImageData wet-on-wet wash + pigment pooling along edges + paper grain (1 drawImage)
- * Stage 2: Strictly bounded (<= 240) lightweight translucent circular pigment blooms (zero giant paths)
+ * Authentic Aquarelle (Watercolor) Rendering Mode
+ * - Edge-preserving bilateral filtering keeps distinct color regions crisp (zero muddy over-fusion!)
+ * - Soft tonal glaze quantization gives genuine layered watercolor wash clarity
+ * - True capillary backrun rim darkening accumulates along drying wash edges
+ * - Cold-press paper grain & boundary-aware subtle pigment accents stay fast (< 10ms)
  */
 function renderAquarelle(
   source,
@@ -278,69 +363,133 @@ function renderAquarelle(
   const detailLevel = Math.max(1, Math.min(5, Math.round(cfg.aquarelleDetail)));
   const isDraft = Boolean(options.isDraft);
 
-  // Bounded working buffer for direct-pixel watercolor wash & paper tooth
   const aspect = outHeight / outWidth;
-  const washMaxW = isDraft ? 140 : options.exportScale > 1 ? 320 : 220;
-  const w = Math.max(64, Math.min(washMaxW, Math.round(90 + detailLevel * 32 - softnessNorm * 36)));
-  const h = Math.max(48, Math.round(w * aspect));
+  const targetW = isDraft
+    ? Math.min(180, 120 + detailLevel * 12)
+    : options.exportScale > 1
+    ? Math.min(420, 240 + detailLevel * 36)
+    : Math.min(280, 160 + detailLevel * 24);
+  const w = Math.max(80, Math.min(outWidth, targetW));
+  const h = Math.max(60, Math.round(w * aspect));
+  const len = w * h;
 
-  // Cache sampled raw pixels per (source, w, h) so dragging watercolor sliders skips getImageData
-  let rawPixels;
-  if (
-    aquarelleSourceCache &&
-    aquarelleSourceCache.source === source &&
-    aquarelleSourceCache.w === w &&
-    aquarelleSourceCache.h === h
-  ) {
-    rawPixels = aquarelleSourceCache.raw;
+  // Bucket softness into 5 clean steps for instant cache hits during Pigment/Paper slider drags
+  const softnessStep = Math.round(softnessNorm * 4);
+  const cacheHit =
+    aquarelleRegionCache &&
+    aquarelleRegionCache.source === source &&
+    aquarelleRegionCache.w === w &&
+    aquarelleRegionCache.h === h &&
+    aquarelleRegionCache.softnessStep === softnessStep &&
+    aquarelleRegionCache.contrast === cfg.contrast &&
+    aquarelleRegionCache.brightness === cfg.brightness &&
+    aquarelleRegionCache.saturation === cfg.saturation &&
+    aquarelleRegionCache.colorMode === cfg.colorMode &&
+    aquarelleRegionCache.lightBg === bgSpec.light;
+
+  let wR;
+  let wG;
+  let wB;
+  let rimStrength;
+
+  if (cacheHit) {
+    wR = aquarelleRegionCache.wR;
+    wG = aquarelleRegionCache.wG;
+    wB = aquarelleRegionCache.wB;
+    rimStrength = aquarelleRegionCache.rimStrength;
   } else {
     const sCanvas = getScratchCanvas('aq-raw', w, h);
     const sCtx = sCanvas.getContext('2d', { willReadFrequently: true });
     sCtx.imageSmoothingEnabled = true;
     sCtx.imageSmoothingQuality = 'high';
     sCtx.drawImage(source, 0, 0, w, h);
-    rawPixels = new Uint8ClampedArray(sCtx.getImageData(0, 0, w, h).data);
-    aquarelleSourceCache = { source, w, h, raw: rawPixels };
+    const raw = sCtx.getImageData(0, 0, w, h).data;
+
+    const srcR = new Float32Array(len);
+    const srcG = new Float32Array(len);
+    const srcB = new Float32Array(len);
+
+    for (let i = 0; i < len; i++) {
+      const p = i * 4;
+      const [ar, ag, ab] = adjustPixelColor(
+        raw[p],
+        raw[p + 1],
+        raw[p + 2],
+        contrastFactor,
+        brightnessOffset,
+        satFactor
+      );
+      const lum = 0.2126 * ar + 0.7152 * ag + 0.0722 * ab;
+      const [cr, cg, cb] = mapPaletteColor(ar, ag, ab, lum, cfg.colorMode, bgSpec.light);
+      srcR[i] = cr;
+      srcG[i] = cg;
+      srcB[i] = cb;
+    }
+
+    // Edge-preserving bilateral passes: flatten interior washes while keeping distinct color boundaries sharp!
+    const radius = softnessStep >= 3 ? 2 : 1;
+    const colorSigma = 28 + softnessStep * 9; // Strict enough to keep orange/indigo or cyan/magenta cleanly separated
+    const pass1 = bilateralWashFilter(srcR, srcG, srcB, w, h, radius, colorSigma);
+    const finalPass = !isDraft && softnessStep >= 2
+      ? bilateralWashFilter(pass1.r, pass1.g, pass1.b, w, h, 1, colorSigma * 0.85)
+      : pass1;
+
+    wR = finalPass.r;
+    wG = finalPass.g;
+    wB = finalPass.b;
+
+    // Precompute capillary backrun / pigment-edge accumulation along wash region boundaries
+    rimStrength = new Float32Array(len);
+    for (let y = 1; y < h - 1; y++) {
+      const rowOff = y * w;
+      for (let x = 1; x < w - 1; x++) {
+        const i = rowOff + x;
+        const drX = wR[i + 1] - wR[i - 1];
+        const dgX = wG[i + 1] - wG[i - 1];
+        const dbX = wB[i + 1] - wB[i - 1];
+        const drY = wR[i + w] - wR[i - w];
+        const dgY = wG[i + w] - wG[i - w];
+        const dbY = wB[i + w] - wB[i - w];
+        const grad = Math.sqrt(drX * drX + dgX * dgX + dbX * dbX + drY * drY + dgY * dgY + dbY * dbY);
+        if (grad > 28) {
+          rimStrength[i] = Math.min(1, (grad - 28) / 115);
+        }
+      }
+    }
+
+    aquarelleRegionCache = {
+      source,
+      w,
+      h,
+      softnessStep,
+      contrast: cfg.contrast,
+      brightness: cfg.brightness,
+      saturation: cfg.saturation,
+      colorMode: cfg.colorMode,
+      lightBg: bgSpec.light,
+      wR,
+      wG,
+      wB,
+      rimStrength
+    };
   }
 
-  const len = w * h;
-  const srcR = new Float32Array(len);
-  const srcG = new Float32Array(len);
-  const srcB = new Float32Array(len);
-
-  for (let i = 0; i < len; i++) {
-    const p = i * 4;
-    const [ar, ag, ab] = adjustPixelColor(
-      rawPixels[p],
-      rawPixels[p + 1],
-      rawPixels[p + 2],
-      contrastFactor,
-      brightnessOffset,
-      satFactor
-    );
-    const lum = 0.2126 * ar + 0.7152 * ag + 0.0722 * ab;
-    const [cr, cg, cb] = mapPaletteColor(ar, ag, ab, lum, cfg.colorMode, bgSpec.light);
-    srcR[i] = cr;
-    srcG[i] = cg;
-    srcB[i] = cb;
-  }
-
-  // Soft wet-on-wet bleed blur controlled by Wash Softness slider
-  const blurRadius = softnessNorm > 0.65 ? 2 : softnessNorm > 0.25 ? 1 : 0;
-  const { r: wR, g: wG, b: wB } = smoothField(srcR, srcG, srcB, w, h, blurRadius);
-
-  // Paper base RGB
-  const paperR = bgSpec.hex === '#f7f2e8' ? 247 : bgSpec.light ? 255 : 10;
-  const paperG = bgSpec.hex === '#f7f2e8' ? 242 : bgSpec.light ? 255 : 14;
-  const paperB = bgSpec.hex === '#f7f2e8' ? 232 : bgSpec.light ? 255 : 22;
+  // Paper base color
+  const paperR = bgSpec.hex === '#f7f2e8' ? 248 : bgSpec.light ? 255 : 10;
+  const paperG = bgSpec.hex === '#f7f2e8' ? 243 : bgSpec.light ? 255 : 14;
+  const paperB = bgSpec.hex === '#f7f2e8' ? 233 : bgSpec.light ? 255 : 22;
 
   const washCanvas = getScratchCanvas('aq-wash', w, h);
   const wCtx = washCanvas.getContext('2d');
   const outImg = wCtx.createImageData(w, h);
   const outD = outImg.data;
-  const washBlend = Math.min(0.95, 0.45 + pigmentNorm * 0.36);
-  const paperLift = bgSpec.light ? 20 + softnessNorm * 16 : 0;
-  const chromaBoost = 1.1 + pigmentNorm * 0.14;
+
+  // Soft tonal step quantization gives distinct hand-painted watercolor wash tiers without harsh posterization
+  const glazeLevels = Math.max(5, Math.round(11 - softnessNorm * 4));
+  const quantBlend = 0.24 + softnessNorm * 0.22;
+  const washOpacity = Math.min(0.96, 0.56 + pigmentNorm * 0.3);
+  const paperLift = bgSpec.light ? 16 + softnessNorm * 10 : 0;
+  const chromaBoost = 1.08 + pigmentNorm * 0.14;
   const useGrain = cfg.aquarellePaperGrain;
 
   for (let y = 0; y < h; y++) {
@@ -352,38 +501,46 @@ function renderAquarelle(
       let g = wG[i];
       let b = wB[i];
 
-      const luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-      r = clamp255(paperLift + (luma + (r - luma) * chromaBoost) * (bgSpec.light ? 0.9 : 1));
-      g = clamp255(paperLift + (luma + (g - luma) * chromaBoost) * (bgSpec.light ? 0.9 : 1));
-      b = clamp255(paperLift + (luma + (b - luma) * chromaBoost) * (bgSpec.light ? 0.92 : 1));
+      // Soft watercolor tonal quantization (preserves distinct color shapes & crisp midtone clarity)
+      const qr = Math.round((r / 255) * glazeLevels) * (255 / glazeLevels);
+      const qg = Math.round((g / 255) * glazeLevels) * (255 / glazeLevels);
+      const qb = Math.round((b / 255) * glazeLevels) * (255 / glazeLevels);
+      r = r * (1 - quantBlend) + qr * quantBlend;
+      g = g * (1 - quantBlend) + qg * quantBlend;
+      b = b * (1 - quantBlend) + qb * quantBlend;
 
-      // Capillary pigment pooling along tonal transitions (fast 4-neighbor gradient — zero draw calls!)
-      let edgeDarken = 1;
-      if (x > 0 && x < w - 1 && y > 0 && y < h - 1) {
-        const dl =
-          Math.abs(wR[i + 1] - wR[i - 1]) +
-          Math.abs(wR[i + w] - wR[i - w]) +
-          Math.abs(wG[i + 1] - wG[i - 1]) +
-          Math.abs(wG[i + w] - wG[i - w]);
-        if (dl > 55) {
-          edgeDarken = Math.max(0.74, 1 - Math.min(0.26, ((dl - 55) / 260) * pigmentNorm));
-        }
+      // Boost pigment clarity and gently lift deep shadows on cotton paper
+      const luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      r = clamp255(paperLift + (luma + (r - luma) * chromaBoost) * (bgSpec.light ? 0.92 : 1));
+      g = clamp255(paperLift + (luma + (g - luma) * chromaBoost) * (bgSpec.light ? 0.92 : 1));
+      b = clamp255(paperLift + (luma + (b - luma) * chromaBoost) * (bgSpec.light ? 0.94 : 1));
+
+      // Authentic capillary backrun effect: pigment accumulates & slightly darkens/saturates at wash edges
+      const rim = rimStrength[i];
+      if (rim > 0) {
+        const rimFactor = 1 - rim * Math.min(0.32, 0.18 * pigmentNorm + 0.06);
+        const rimLuma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        r = clamp255((rimLuma + (r - rimLuma) * (1 + rim * 0.22)) * rimFactor);
+        g = clamp255((rimLuma + (g - rimLuma) * (1 + rim * 0.22)) * rimFactor);
+        b = clamp255((rimLuma + (b - rimLuma) * (1 + rim * 0.22)) * rimFactor);
       }
 
-      // Watercolor glaze blend onto paper + subtle organic wet-wash wave
-      const organicWave = 1 + (Math.sin(x * 0.14 + y * 0.09) + Math.cos(y * 0.17 - x * 0.07)) * 0.03 * softnessNorm;
-      const localAlpha = bgSpec.light && luma > 228 ? washBlend * ((255 - luma) / 27) : washBlend;
-      const a = Math.max(0, Math.min(1, localAlpha * organicWave));
+      // Subtle watercolor wash density variation inside regions (gentle paper granulation, zero muddiness)
+      const grainVal = PAPER_NOISE_64[ny | (x & 63)];
+      const granulation = useGrain ? 1 + grainVal * 0.0045 : 1;
+      // Reserve bright paper highlights cleanly like real watercolor
+      const highlightFade = bgSpec.light && luma > 224 ? Math.max(0, (255 - luma) / 31) : 1;
+      const a = Math.max(0, Math.min(1, washOpacity * highlightFade * granulation));
 
-      let fr = paperR * (1 - a) + r * edgeDarken * a;
-      let fg = paperG * (1 - a) + g * edgeDarken * a;
-      let fb = paperB * (1 - a) + b * edgeDarken * a;
+      let fr = paperR * (1 - a) + r * a;
+      let fg = paperG * (1 - a) + g * a;
+      let fb = paperB * (1 - a) + b * a;
 
       if (useGrain) {
-        const grain = PAPER_NOISE_64[ny | (x & 63)] * (bgSpec.light ? 0.85 : 0.45);
-        fr = clamp255(fr + grain);
-        fg = clamp255(fg + grain);
-        fb = clamp255(fb + grain);
+        const tooth = grainVal * (bgSpec.light ? 0.72 : 0.35);
+        fr = clamp255(fr + tooth);
+        fg = clamp255(fg + tooth);
+        fb = clamp255(fb + tooth);
       }
 
       const p = i * 4;
@@ -396,7 +553,6 @@ function renderAquarelle(
 
   wCtx.putImageData(outImg, 0, 0);
 
-  // Single fast bilinear upscale onto output canvas (silky wet-on-wet base)
   ctx.fillStyle = bgSpec.hex;
   ctx.fillRect(0, 0, outWidth, outHeight);
   ctx.save();
@@ -412,15 +568,14 @@ function renderAquarelle(
     ctx.restore();
   }
 
-  // Stage 2: Strictly capped (<= 120 draft / <= 240 settled) soft organic pigment blooms
+  // Stage 2: Boundary-respecting subtle watercolor bloom accents (ONLY inside calm regions, never mushing across borders!)
   const rand = mulberry32(133791);
   const cells = options.skipCells ? null : [];
-  const dabCols = isDraft ? 12 : Math.min(19, 11 + detailLevel * 2);
-  const dabRows = Math.max(8, Math.round(dabCols * aspect));
+  const dabCols = isDraft ? 10 : Math.min(16, 10 + detailLevel);
+  const dabRows = Math.max(7, Math.round(dabCols * aspect));
   const stepX = outWidth / dabCols;
   const stepY = outHeight / dabRows;
-  const baseR = ((stepX + stepY) * 0.5) * (0.78 + softnessNorm * 0.55);
-  const dabAlpha = Math.min(0.28, 0.11 * pigmentNorm + 0.06);
+  const dabAlpha = Math.min(0.16, 0.065 * pigmentNorm + 0.03);
 
   ctx.save();
   for (let gy = 0; gy < dabRows; gy++) {
@@ -428,33 +583,36 @@ function renderAquarelle(
       const sx = Math.min(w - 1, Math.floor(((gx + 0.5) / dabCols) * w));
       const sy = Math.min(h - 1, Math.floor(((gy + 0.5) / dabRows) * h));
       const si = sy * w + sx;
+
+      // Skip dabs directly straddling strong region borders so distinct colors NEVER mush together
+      if (rimStrength[si] > 0.35) continue;
+
       const cr = Math.round(wR[si]);
       const cg = Math.round(wG[si]);
       const cb = Math.round(wB[si]);
       const lum = 0.2126 * cr + 0.7152 * cg + 0.0722 * cb;
-      if (bgSpec.light && lum > 236) continue;
+      if (bgSpec.light && lum > 232) continue;
 
-      const cx = (gx + 0.5) * stepX + (rand() - 0.5) * stepX * 0.55;
-      const cy = (gy + 0.5) * stepY + (rand() - 0.5) * stepY * 0.55;
-      const r = baseR * (0.76 + rand() * 0.48);
+      const cx = (gx + 0.5) * stepX + (rand() - 0.5) * stepX * 0.35;
+      const cy = (gy + 0.5) * stepY + (rand() - 0.5) * stepY * 0.35;
+      const r = ((stepX + stepY) * 0.5) * (0.48 + softnessNorm * 0.28) * (0.8 + rand() * 0.35);
 
-      // Soft translucent watercolor bloom (simple circle — fast GPU path, zero ellipse tessellation!)
       ctx.fillStyle = `rgba(${cr},${cg},${cb},${dabAlpha.toFixed(2)})`;
       ctx.beginPath();
       ctx.arc(cx, cy, r, 0, Math.PI * 2);
       ctx.fill();
 
-      // Occasional delicate wet-edge capillary ring
-      if (!isDraft && rand() > 0.62) {
-        ctx.strokeStyle = `rgba(${Math.round(cr * 0.75)},${Math.round(cg * 0.75)},${Math.round(cb * 0.75)},${(dabAlpha * 0.48).toFixed(2)})`;
-        ctx.lineWidth = Math.max(0.9, 1.3 * scaleMultiplier);
+      // Delicate capillary rim on occasional blooms
+      if (!isDraft && rand() > 0.65) {
+        ctx.strokeStyle = `rgba(${Math.round(cr * 0.74)},${Math.round(cg * 0.74)},${Math.round(cb * 0.74)},${(dabAlpha * 0.65).toFixed(2)})`;
+        ctx.lineWidth = Math.max(0.8, 1.15 * scaleMultiplier);
         ctx.beginPath();
-        ctx.arc(cx, cy, r * 0.88, 0, Math.PI * 2);
+        ctx.arc(cx, cy, r * 0.92, 0, Math.PI * 2);
         ctx.stroke();
       }
 
       if (cells) {
-        cells.push({ cx, cy, r: cr, g: cg, b: cb, lum, char: '', alpha: dabAlpha, radius: r * 0.6 });
+        cells.push({ cx, cy, r: cr, g: cg, b: cb, lum, char: '', alpha: dabAlpha, radius: r * 0.65 });
       }
     }
   }
@@ -478,34 +636,70 @@ function renderAquarelle(
 }
 
 /**
- * Precomputed circular pixel disk offsets for fast direct-pixel contour thickness stamping
+ * Ramer–Douglas–Peucker (RDP) Polyline Simplification
+ * Converts traced pixel chains into clean, crisp straight geometric line segments.
  */
-const diskOffsetCache = new Map();
+function simplifyPolylineRDP(pts, epsilon) {
+  const n = pts.length;
+  if (n <= 2) return pts;
+  const eps2 = epsilon * epsilon;
+  const keep = new Uint8Array(n);
+  keep[0] = 1;
+  keep[n - 1] = 1;
 
-function getDiskOffsets(radius) {
-  const r = Math.max(0, Math.min(5, radius | 0));
-  let cached = diskOffsetCache.get(r);
-  if (cached) return cached;
-  const pts = [];
-  const r2 = r * r + 0.35;
-  for (let dy = -r; dy <= r; dy++) {
-    for (let dx = -r; dx <= r; dx++) {
-      const d2 = dx * dx + dy * dy;
-      if (d2 <= r2) {
-        const weight = r === 0 ? 1 : Math.max(0.45, 1 - Math.sqrt(d2) / (r + 0.85));
-        pts.push([dx, dy, weight]);
+  // Iterative stack avoids recursion overhead
+  const stack = [[0, n - 1]];
+  while (stack.length > 0) {
+    const [start, end] = stack.pop();
+    if (end - start <= 1) continue;
+
+    const ax = pts[start][0];
+    const ay = pts[start][1];
+    const bx = pts[end][0];
+    const by = pts[end][1];
+    const dx = bx - ax;
+    const dy = by - ay;
+    const len2 = dx * dx + dy * dy;
+
+    let maxDist2 = -1;
+    let maxIdx = -1;
+    for (let i = start + 1; i < end; i++) {
+      const px = pts[i][0];
+      const py = pts[i][1];
+      let d2;
+      if (len2 < 1e-6) {
+        d2 = (px - ax) * (px - ax) + (py - ay) * (py - ay);
+      } else {
+        const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2));
+        const projX = ax + t * dx;
+        const projY = ay + t * dy;
+        d2 = (px - projX) * (px - projX) + (py - projY) * (py - projY);
+      }
+      if (d2 > maxDist2) {
+        maxDist2 = d2;
+        maxIdx = i;
       }
     }
+
+    if (maxDist2 > eps2 && maxIdx > start) {
+      keep[maxIdx] = 1;
+      stack.push([start, maxIdx], [maxIdx, end]);
+    }
   }
-  diskOffsetCache.set(r, pts);
-  return pts;
+
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    if (keep[i]) out.push(pts[i]);
+  }
+  return out;
 }
 
 /**
- * Non-Blocking Shape / Hollow Outline Rendering Mode
- * Caches Sobel + 8-way NMS edge maps so dragging Threshold / Thickness / Ink Style runs in 1-3ms,
- * and stamps crisp outlines directly into an ImageData pixel buffer over a pure #FFFFFF white interior
- * (1 single ctx.drawImage call — zero Skia path stroker freezes!).
+ * Geometric Shape / Line-First Outline Rendering Mode (Pure White #FFFFFF Interior)
+ * 1. Cached color-aware Sobel + 8-way NMS edge map
+ * 2. Linear chain tracing + Ramer–Douglas–Peucker (RDP) simplification -> crisp straight line segments first
+ * 3. Clean hollow geometric polygon/segment fallback in regions where subject structure exists but clear edges are scarce
+ * 4. Chunked drawing (<= 24 segments per beginPath()) -> crisp vector lines with zero Skia path freezes!
  */
 function renderOutline(
   source,
@@ -525,27 +719,43 @@ function renderOutline(
   baseCanvas.height = outHeight;
   const ctx = baseCanvas.getContext('2d');
 
+  // Always keep interior crisp pure white (#FFFFFF) so geometric line structure stands out cleanly
+  const isWarm = cfg.background === 'warm';
+  const interiorHex = isWarm ? '#faf8f4' : '#ffffff';
+  ctx.fillStyle = interiorHex;
+  ctx.fillRect(0, 0, outWidth, outHeight);
+
+  if (cfg.underlayOpacity > 0) {
+    ctx.save();
+    ctx.globalAlpha = cfg.underlayOpacity * 0.35;
+    ctx.drawImage(source, 0, 0, outWidth, outHeight);
+    ctx.restore();
+  }
+
   const detail = Math.max(1, Math.min(5, Math.round(cfg.outlineDetail)));
   const isDraft = Boolean(options.isDraft);
   const aspect = outHeight / outWidth;
 
-  // Bounded contour resolution: super crisp yet tiny enough to finish Sobel+NMS in ~4ms
   const targetW = isDraft
-    ? Math.min(240, 140 + detail * 20)
+    ? Math.min(200, 120 + detail * 16)
     : options.exportScale > 1
-    ? Math.min(560, 260 + detail * 60)
-    : Math.min(400, 180 + detail * 44);
+    ? Math.min(400, 200 + detail * 40)
+    : Math.min(310, 150 + detail * 32);
   const w = Math.max(80, Math.min(outWidth, targetW));
   const h = Math.max(60, Math.round(w * aspect));
   const len = w * h;
 
-  // Reuse cached Sobel + NMS edge field if source/geometry/tone hasn't changed!
+  // Step 1: Cached Sobel + 8-way NMS edge map (slider drags on Threshold/Thickness/Ink hit cache in < 2ms!)
   let edgeStrength;
   let fR;
   let fG;
   let fB;
   let fL;
+  let gradAngle;
   let p97;
+  let borderR;
+  let borderG;
+  let borderB;
 
   const cacheHit =
     outlineEdgeCache &&
@@ -558,12 +768,7 @@ function renderOutline(
     outlineEdgeCache.saturation === cfg.saturation;
 
   if (cacheHit) {
-    edgeStrength = outlineEdgeCache.edgeStrength;
-    fR = outlineEdgeCache.fR;
-    fG = outlineEdgeCache.fG;
-    fB = outlineEdgeCache.fB;
-    fL = outlineEdgeCache.fL;
-    p97 = outlineEdgeCache.p97;
+    ({ edgeStrength, fR, fG, fB, fL, gradAngle, p97, borderR, borderG, borderB } = outlineEdgeCache);
   } else {
     const sCanvas = getScratchCanvas('outline-src', w, h);
     const sCtx = sCanvas.getContext('2d', { willReadFrequently: true });
@@ -601,8 +806,27 @@ function renderOutline(
       fL[i] = 0.2126 * fR[i] + 0.7152 * fG[i] + 0.0722 * fB[i];
     }
 
+    // Estimate perimeter background color so geometric fallback only activates on real subject regions
+    let bR = 0;
+    let bG = 0;
+    let bB = 0;
+    let bCnt = 0;
+    for (let x = 0; x < w; x += 2) {
+      for (const y of [0, h - 1]) {
+        const idx = y * w + x;
+        bR += fR[idx];
+        bG += fG[idx];
+        bB += fB[idx];
+        bCnt++;
+      }
+    }
+    borderR = bR / Math.max(1, bCnt);
+    borderG = bG / Math.max(1, bCnt);
+    borderB = bB / Math.max(1, bCnt);
+
     const mag = new Float32Array(len);
     const dir = new Uint8Array(len);
+    gradAngle = new Float32Array(len);
     const hist = new Uint32Array(256);
 
     for (let y = 1; y < h - 1; y++) {
@@ -642,11 +866,13 @@ function renderOutline(
         mag[i] = bestM;
         hist[bestM >= 255 ? 255 : bestM | 0]++;
 
-        let angle = (Math.atan2(bestGy, bestGx) * 180) / Math.PI;
-        if (angle < 0) angle += 180;
-        if (angle < 22.5 || angle >= 157.5) dir[i] = 0;
-        else if (angle < 67.5) dir[i] = 1;
-        else if (angle < 112.5) dir[i] = 2;
+        const rad = Math.atan2(bestGy, bestGx);
+        gradAngle[i] = rad;
+        let deg = (rad * 180) / Math.PI;
+        if (deg < 0) deg += 180;
+        if (deg < 22.5 || deg >= 157.5) dir[i] = 0;
+        else if (deg < 67.5) dir[i] = 1;
+        else if (deg < 112.5) dir[i] = 2;
         else dir[i] = 3;
       }
     }
@@ -670,27 +896,14 @@ function renderOutline(
         const i = rowOff + x;
         const m = mag[i];
         if (m < 4) continue;
-
         let n1 = 0;
         let n2 = 0;
         const d = dir[i];
-        if (d === 0) {
-          n1 = mag[i - 1];
-          n2 = mag[i + 1];
-        } else if (d === 1) {
-          n1 = mag[i - w - 1];
-          n2 = mag[i + w + 1];
-        } else if (d === 2) {
-          n1 = mag[i - w];
-          n2 = mag[i + w];
-        } else {
-          n1 = mag[i - w + 1];
-          n2 = mag[i + w - 1];
-        }
-
-        if (m >= n1 && m >= n2) {
-          edgeStrength[i] = m;
-        }
+        if (d === 0) { n1 = mag[i - 1]; n2 = mag[i + 1]; }
+        else if (d === 1) { n1 = mag[i - w - 1]; n2 = mag[i + w + 1]; }
+        else if (d === 2) { n1 = mag[i - w]; n2 = mag[i + w]; }
+        else { n1 = mag[i - w + 1]; n2 = mag[i + w - 1]; }
+        if (m >= n1 && m >= n2) edgeStrength[i] = m;
       }
     }
 
@@ -707,140 +920,321 @@ function renderOutline(
       fG,
       fB,
       fL,
-      p97
+      gradAngle,
+      p97,
+      borderR,
+      borderG,
+      borderB
     };
   }
 
-  // Pure white (#FFFFFF) interior buffer (or warm paper white if explicitly selected)
-  const isWarm = cfg.background === 'warm';
-  const bgR = isWarm ? 250 : 255;
-  const bgG = isWarm ? 248 : 255;
-  const bgB = isWarm ? 244 : 255;
-  const interiorHex = isWarm ? '#faf8f4' : '#ffffff';
-
-  const outCanvas = getScratchCanvas('outline-out', w, h);
-  const oCtx = outCanvas.getContext('2d');
-  const outImg = oCtx.createImageData(w, h);
-  const outD = outImg.data;
-
-  // Fill entire interior with crisp pure white (#FFFFFF)
-  for (let i = 0; i < outD.length; i += 4) {
-    outD[i] = bgR;
-    outD[i + 1] = bgG;
-    outD[i + 2] = bgB;
-    outD[i + 3] = 255;
-  }
-
+  // Step 2: Hysteresis edge mask -> Linear chain tracing -> RDP Straight-Line Simplification
   const sliderNorm = Math.max(0.05, Math.min(0.95, cfg.outlineThreshold / 100));
-  const threshold = Math.max(7, p97 * (0.2 + sliderNorm * 0.92));
+  const threshold = Math.max(7, p97 * (0.22 + sliderNorm * 0.92));
   const softFloor = threshold * 0.48;
 
-  const stampRadius = Math.max(0, Math.min(3, Math.round((cfg.outlineThickness - 1) * 0.55)));
-  const diskOffsets = getDiskOffsets(stampRadius);
-  const sx = outWidth / w;
-  const sy = outHeight / h;
-  const cells = options.skipCells ? null : [];
-  let contourCount = 0;
-
+  const active = new Uint8Array(len);
   for (let y = 1; y < h - 1; y++) {
     const rowOff = y * w;
     for (let x = 1; x < w - 1; x++) {
       const i = rowOff + x;
       const m = edgeStrength[i];
       if (m < softFloor) continue;
-
       if (
-        m < threshold &&
-        edgeStrength[i - w - 1] < threshold && edgeStrength[i - w] < threshold && edgeStrength[i - w + 1] < threshold &&
-        edgeStrength[i - 1] < threshold && edgeStrength[i + 1] < threshold &&
-        edgeStrength[i + w - 1] < threshold && edgeStrength[i + w] < threshold && edgeStrength[i + w + 1] < threshold
+        m >= threshold ||
+        edgeStrength[i - w - 1] >= threshold || edgeStrength[i - w] >= threshold || edgeStrength[i - w + 1] >= threshold ||
+        edgeStrength[i - 1] >= threshold || edgeStrength[i + 1] >= threshold ||
+        edgeStrength[i + w - 1] >= threshold || edgeStrength[i + w] >= threshold || edgeStrength[i + w + 1] >= threshold
       ) {
-        continue;
+        active[i] = 1;
+      }
+    }
+  }
+
+  const getContourColor = (i) => {
+    if (cfg.outlineInkStyle === 'ink') return [15, 23, 42];
+    if (cfg.outlineInkStyle === 'palette') {
+      const [pr, pg, pb] = mapPaletteColor(fR[i], fG[i], fB[i], fL[i], cfg.colorMode, true);
+      return [Math.round(pr * 0.68), Math.round(pg * 0.68), Math.round(pb * 0.68)];
+    }
+    const lum = fL[i];
+    const darken = lum > 175 ? 0.5 : lum > 120 ? 0.66 : 0.84;
+    const luma = 0.2126 * fR[i] + 0.7152 * fG[i] + 0.0722 * fB[i];
+    return [
+      Math.round(clamp255((luma + (fR[i] - luma) * 1.35) * darken)),
+      Math.round(clamp255((luma + (fG[i] - luma) * 1.35) * darken)),
+      Math.round(clamp255((luma + (fB[i] - luma) * 1.35) * darken))
+    ];
+  };
+
+  // Track which macro-tiles already have strong geometric line coverage (for clean shape fallback)
+  const tileCols = 10;
+  const tileRows = Math.max(6, Math.round(tileCols * aspect));
+  const tileLineCounts = new Uint16Array(tileCols * tileRows);
+
+  const visited = new Uint8Array(len);
+  const dirs8 = [
+    [1, 0], [1, 1], [0, 1], [-1, 1],
+    [-1, 0], [-1, -1], [0, -1], [1, -1]
+  ];
+
+  // Discard tiny noise specks; simplify every real contour into crisp straight geometric segments!
+  const minChainLen = Math.max(3, 8 - detail); // Detail 1: >=7px clean lines; Detail 5: >=3px
+  const rdpEpsilon = Math.max(0.85, 2.75 - detail * 0.36);
+  const sx = outWidth / w;
+  const sy = outHeight / h;
+
+  const lineSegments = []; // [x1, y1, x2, y2, r, g, b]
+  const maxSegments = isDraft ? 420 : 880;
+
+  for (let y = 1; y < h - 1 && lineSegments.length < maxSegments; y++) {
+    const rowOff = y * w;
+    for (let x = 1; x < w - 1 && lineSegments.length < maxSegments; x++) {
+      const startIdx = rowOff + x;
+      if (!active[startIdx] || visited[startIdx]) continue;
+
+      // Follow connected edge chain greedily (preferring strongest ridge continuation)
+      const chain = [[x, y]];
+      visited[startIdx] = 1;
+      let cx = x;
+      let cy = y;
+      let prevDx = 0;
+      let prevDy = 0;
+
+      for (let step = 0; step < 180; step++) {
+        let bestX = -1;
+        let bestY = -1;
+        let bestScore = -1;
+        for (let k = 0; k < 8; k++) {
+          const nx = cx + dirs8[k][0];
+          const ny = cy + dirs8[k][1];
+          if (nx <= 0 || nx >= w - 1 || ny <= 0 || ny >= h - 1) continue;
+          const ni = ny * w + nx;
+          if (!active[ni] || visited[ni]) continue;
+          // Favor straight continuation along previous direction for clean geometric line tracing
+          const alignBonus = (dirs8[k][0] === prevDx && dirs8[k][1] === prevDy) ? 28 : 0;
+          const score = edgeStrength[ni] + alignBonus;
+          if (score > bestScore) {
+            bestScore = score;
+            bestX = nx;
+            bestY = ny;
+          }
+        }
+        if (bestX < 0) break;
+        prevDx = bestX - cx;
+        prevDy = bestY - cy;
+        cx = bestX;
+        cy = bestY;
+        visited[cy * w + cx] = 1;
+        chain.push([cx, cy]);
       }
 
-      contourCount++;
-      const strength = Math.min(1, (m - softFloor) / Math.max(10, threshold * 0.8));
+      if (chain.length < minChainLen) continue;
 
-      let cr = 15;
-      let cg = 23;
-      let cb = 42;
-      if (cfg.outlineInkStyle === 'palette') {
-        const [pr, pg, pb] = mapPaletteColor(fR[i], fG[i], fB[i], fL[i], cfg.colorMode, true);
-        cr = Math.round(pr * 0.68);
-        cg = Math.round(pg * 0.68);
-        cb = Math.round(pb * 0.68);
-      } else if (cfg.outlineInkStyle !== 'ink') {
-        const lum = fL[i];
-        const darken = lum > 175 ? 0.5 : lum > 120 ? 0.66 : 0.84;
-        const luma = 0.2126 * fR[i] + 0.7152 * fG[i] + 0.0722 * fB[i];
-        cr = Math.round(clamp255((luma + (fR[i] - luma) * 1.35) * darken));
-        cg = Math.round(clamp255((luma + (fG[i] - luma) * 1.35) * darken));
-        cb = Math.round(clamp255((luma + (fB[i] - luma) * 1.35) * darken));
+      // Simplify jagged pixels into crisp straight geometric line segments via RDP
+      const simplified = simplifyPolylineRDP(chain, rdpEpsilon);
+      if (simplified.length < 2) continue;
+
+      // Sample representative contour color from chain midpoint
+      const midPt = chain[chain.length >> 1];
+      const [cr, cg, cb] = getContourColor(midPt[1] * w + midPt[0]);
+
+      for (let s = 0; s < simplified.length - 1 && lineSegments.length < maxSegments; s++) {
+        let x1 = (simplified[s][0] + 0.5) * sx;
+        let y1 = (simplified[s][1] + 0.5) * sy;
+        let x2 = (simplified[s + 1][0] + 0.5) * sx;
+        let y2 = (simplified[s + 1][1] + 0.5) * sy;
+
+        // Gentle axis snap (±5°) on bold/medium detail for architectural crispness
+        if (detail <= 3) {
+          const dx = x2 - x1;
+          const dy = y2 - y1;
+          const segLen = Math.hypot(dx, dy);
+          if (segLen > 12) {
+            if (Math.abs(dy) < segLen * 0.085) {
+              const my = (y1 + y2) * 0.5;
+              y1 = my;
+              y2 = my;
+            } else if (Math.abs(dx) < segLen * 0.085) {
+              const mx = (x1 + x2) * 0.5;
+              x1 = mx;
+              x2 = mx;
+            }
+          }
+        }
+
+        lineSegments.push([x1, y1, x2, y2, cr, cg, cb]);
+
+        // Mark tile coverage
+        const tx = Math.min(tileCols - 1, Math.floor(((simplified[s][0] + simplified[s + 1][0]) * 0.5 / w) * tileCols));
+        const ty = Math.min(tileRows - 1, Math.floor(((simplified[s][1] + simplified[s + 1][1]) * 0.5 / h) * tileRows));
+        tileLineCounts[ty * tileCols + tx]++;
       }
+    }
+  }
 
-      const baseAlpha = Math.min(1, 0.58 + strength * 0.42);
+  // Step 3: Clean Hollow Geometric Shape Fallback in regions where subject exists but clear lines are scarce
+  const fallbackPolygons = []; // { cx, cy, r, sides, rot, cr, cg, cb }
+  const sparseMode = lineSegments.length < 28;
+  const tileW = outWidth / tileCols;
+  const tileH = outHeight / tileRows;
 
-      // Stamp directly into white ImageData buffer (zero Canvas path/stroke calls!)
-      for (let k = 0; k < diskOffsets.length; k++) {
-        const nx = x + diskOffsets[k][0];
-        const ny = y + diskOffsets[k][1];
-        if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
-        const a = baseAlpha * diskOffsets[k][2];
-        const p = (ny * w + nx) * 4;
-        // Alpha-blend darker ink over existing white pixel (preserving strongest overlapping contour)
-        const invA = 1 - a;
-        const nr = outD[p] * invA + cr * a;
-        const ng = outD[p + 1] * invA + cg * a;
-        const nb = outD[p + 2] * invA + cb * a;
-        if (nr < outD[p]) outD[p] = nr;
-        if (ng < outD[p + 1]) outD[p + 1] = ng;
-        if (nb < outD[p + 2]) outD[p + 2] = nb;
+  for (let ty = 0; ty < tileRows; ty++) {
+    for (let tx = 0; tx < tileCols; tx++) {
+      // Only add clean geometric shape fallback where line segments are scarce (0 lines, or <=1 when whole image is soft)
+      const count = tileLineCounts[ty * tileCols + tx];
+      if (count > (sparseMode ? 1 : 0)) continue;
+
+      const sx0 = Math.floor((tx / tileCols) * w);
+      const sx1 = Math.min(w - 1, Math.floor(((tx + 1) / tileCols) * w));
+      const sy0 = Math.floor((ty / tileRows) * h);
+      const sy1 = Math.min(h - 1, Math.floor(((ty + 1) / tileRows) * h));
+
+      let sumR = 0;
+      let sumG = 0;
+      let sumB = 0;
+      let sumL = 0;
+      let sumCos = 0;
+      let sumSin = 0;
+      let samples = 0;
+
+      for (let py = sy0; py <= sy1; py += 2) {
+        const ro = py * w;
+        for (let px = sx0; px <= sx1; px += 2) {
+          const i = ro + px;
+          sumR += fR[i];
+          sumG += fG[i];
+          sumB += fB[i];
+          sumL += fL[i];
+          const a = gradAngle[i];
+          sumCos += Math.cos(a);
+          sumSin += Math.sin(a);
+          samples++;
+        }
       }
+      if (samples === 0) continue;
 
-      if (cells && cells.length < 480 && (contourCount % 4 === 0 || detail <= 2)) {
+      const avgR = sumR / samples;
+      const avgG = sumG / samples;
+      const avgB = sumB / samples;
+      const avgL = sumL / samples;
+
+      // Skip uniform background tiles so white negative space stays clean!
+      const bgDist = Math.hypot(avgR - borderR, avgG - borderG, avgB - borderB);
+      if (bgDist < 42 && !sparseMode) continue;
+      if (bgDist < 22 && sparseMode) continue;
+
+      const centerSampleIdx = Math.min(len - 1, ((sy0 + sy1) >> 1) * w + ((sx0 + sx1) >> 1));
+      const [cr, cg, cb] = getContourColor(centerSampleIdx);
+      const cx = (tx + 0.5) * tileW;
+      const cy = (ty + 0.5) * tileH;
+      const normProminence = Math.min(1, bgDist / 160);
+      const polyRadius = Math.min(tileW, tileH) * (0.24 + normProminence * 0.2);
+      // Choose clean geometric primitive: 3 (triangle), 4 (diamond/square), or 6 (hexagon) by tonal band
+      const sides = avgL > 165 ? 3 : avgL > 90 ? 4 : 6;
+      const rot = Math.atan2(sumSin, sumCos) + Math.PI * 0.25;
+
+      fallbackPolygons.push({ cx, cy, r: polyRadius, sides, rot, cr, cg, cb });
+    }
+  }
+
+  // Step 4: Crisp Chunked Vector Drawing (<= 24 segments per beginPath() -> zero Skia GPU freezes!)
+  const strokeWidth = Math.max(1.0, cfg.outlineThickness * scaleMultiplier);
+  const cells = options.skipCells ? null : [];
+
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'miter';
+  ctx.miterLimit = 3;
+
+  // Group straight line segments by color bucket and flush in small <= 24-segment chunks
+  const segBuckets = new Map();
+  for (let i = 0; i < lineSegments.length; i++) {
+    const [x1, y1, x2, y2, cr, cg, cb] = lineSegments[i];
+    const qr = cfg.outlineInkStyle === 'ink' ? 15 : cr & 0xf0;
+    const qg = cfg.outlineInkStyle === 'ink' ? 23 : cg & 0xf0;
+    const qb = cfg.outlineInkStyle === 'ink' ? 42 : cb & 0xf0;
+    const key = (qr << 16) | (qg << 8) | qb;
+    let list = segBuckets.get(key);
+    if (!list) {
+      list = [];
+      segBuckets.set(key, list);
+    }
+    list.push(x1, y1, x2, y2);
+
+    if (cells && cells.length < 440) {
+      cells.push({
+        cx: (x1 + x2) * 0.5,
+        cy: (y1 + y2) * 0.5,
+        r: cr,
+        g: cg,
+        b: cb,
+        lum: 80,
+        char: '',
+        alpha: 0.94,
+        radius: strokeWidth * 0.7
+      });
+    }
+  }
+
+  ctx.lineWidth = strokeWidth;
+  for (const [key, list] of segBuckets) {
+    ctx.strokeStyle = `rgb(${(key >> 16) & 255},${(key >> 8) & 255},${key & 255})`;
+    for (let start = 0; start < list.length; start += 96) {
+      const end = Math.min(list.length, start + 96);
+      ctx.beginPath();
+      for (let k = start; k < end; k += 4) {
+        ctx.moveTo(list[k], list[k + 1]);
+        ctx.lineTo(list[k + 2], list[k + 3]);
+      }
+      ctx.stroke();
+    }
+  }
+
+  // Draw clean hollow geometric fallback polygons (white #FFFFFF interior preserved!)
+  if (fallbackPolygons.length > 0) {
+    ctx.lineWidth = Math.max(1.0, strokeWidth * 0.78);
+    for (let i = 0; i < fallbackPolygons.length; i++) {
+      const poly = fallbackPolygons[i];
+      ctx.strokeStyle = `rgba(${poly.cr},${poly.cg},${poly.cb},0.72)`;
+      ctx.beginPath();
+      for (let s = 0; s < poly.sides; s++) {
+        const a = poly.rot + (s * Math.PI * 2) / poly.sides;
+        const px = poly.cx + Math.cos(a) * poly.r;
+        const py = poly.cy + Math.sin(a) * poly.r;
+        if (s === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.stroke();
+
+      if (cells && cells.length < 480) {
         cells.push({
-          cx: (x + 0.5) * sx,
-          cy: (y + 0.5) * sy,
-          r: cr,
-          g: cg,
-          b: cb,
-          lum: fL[i],
+          cx: poly.cx,
+          cy: poly.cy,
+          r: poly.cr,
+          g: poly.cg,
+          b: poly.cb,
+          lum: 100,
           char: '',
-          alpha: baseAlpha,
-          radius: Math.max(1.2, cfg.outlineThickness * 0.65 * scaleMultiplier)
+          alpha: 0.8,
+          radius: strokeWidth * 0.8
         });
       }
     }
   }
 
-  oCtx.putImageData(outImg, 0, 0);
-
-  ctx.fillStyle = interiorHex;
-  ctx.fillRect(0, 0, outWidth, outHeight);
-
-  if (cfg.underlayOpacity > 0) {
-    ctx.save();
-    ctx.globalAlpha = cfg.underlayOpacity * 0.42;
-    ctx.drawImage(source, 0, 0, outWidth, outHeight);
-    ctx.restore();
-  }
-
-  // Single crisp drawImage onto baseCanvas (ZERO Skia path stroker overhead!)
-  ctx.save();
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(outCanvas, 0, 0, outWidth, outHeight);
   ctx.restore();
 
   const renderMs = Math.max(1, Math.round(performance.now() - startTime));
   return {
     baseCanvas,
     cells,
-    cols: w,
-    rows: h,
+    cols: lineSegments.length,
+    rows: fallbackPolygons.length,
     width: outWidth,
     height: outHeight,
-    fontSize: Math.round(cfg.outlineThickness * 4 * scaleMultiplier),
+    fontSize: Math.round(strokeWidth * 4),
     stepX: sx,
     stepY: sy,
     bgHex: interiorHex,
@@ -1085,7 +1479,6 @@ export function renderArtwork(source, config, options = {}) {
   } else if (dotBuckets) {
     for (const [styleKey, list] of dotBuckets) {
       ctx.fillStyle = styleKey;
-      // Flush in small chunks (<= 64 circles per path) to keep Skia GPU tessellator instant
       for (let start = 0; start < list.length; start += 192) {
         const end = Math.min(list.length, start + 192);
         ctx.beginPath();
@@ -1218,7 +1611,7 @@ export function compositeWithSpotlight(displayCanvas, renderResult, sourceImage,
       if (dist2 > r2) continue;
       const t = 1 - Math.sqrt(dist2) / radius;
       const smooth = t * t * (3 - 2 * t);
-      const scaledR = Math.max(1.1, cell.radius * (1 + smooth * 0.85));
+      const scaledR = Math.max(1.2, cell.radius * (1 + smooth * 0.9));
       ctx.fillStyle = `rgba(${cell.r},${cell.g},${cell.b},${Math.min(1, cell.alpha + smooth * 0.35).toFixed(2)})`;
       ctx.beginPath();
       ctx.arc(cell.cx, cell.cy, scaledR, 0, Math.PI * 2);

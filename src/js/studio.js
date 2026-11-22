@@ -287,9 +287,9 @@ function initStudio() {
       if (statDims) statDims.textContent = `${r.width}×${r.height}px`;
       if (statGrid) {
         if (state.config.mode === 'aquarelle') {
-          statGrid.textContent = `${r.cols}×${r.rows} wash grid`;
+          statGrid.textContent = `${r.cols}×${r.rows} pigment washes`;
         } else if (state.config.mode === 'outline') {
-          statGrid.textContent = `${r.cols}×${r.rows} contour map`;
+          statGrid.textContent = `${r.cols} lines · ${r.rows} shapes`;
         } else {
           statGrid.textContent = `${r.cols}×${r.rows} (${(r.cols * r.rows).toLocaleString()} cells)`;
         }

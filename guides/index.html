@@ -290,66 +290,64 @@
           <h2>5. How Digital Aquarelle (Watercolor) Synthesis Works</h2>
           <p>
             Unlike opaque oil or acrylic paints that sit on top of a canvas, traditional <strong>aquarelle</strong>
-            (watercolor) relies on translucent pigment suspended in water soaking into textured cotton paper. Light
-            passes through stacked color glazes, reflects off the bright paper fibers underneath, and returns to the
-            viewer's eye—a subtractive optical behavior called <strong>multiplicative blending</strong>.
+            (watercolor) relies on translucent pigment suspended in water settling onto textured cotton paper. Light
+            passes through distinct color glazes, reflects off the bright paper fibers underneath, and returns to the
+            viewer's eye—while drying water leaves crisp, slightly darker pigment rims along each wash boundary.
           </p>
           <p>
-            ChromaGlyph Studio recreates this painterly behavior on HTML5 Canvas in four deterministic stages:
+            ChromaGlyph Studio recreates this authentic painterly behavior on HTML5 Canvas without muddy over-fusion:
           </p>
           <ol>
             <li>
-              <strong>Wet-on-Wet Atmospheric Under-Wash:</strong> A soft, low-frequency color glaze spreads the
-              photograph's broad chromatic fields into the paper using <code>multiply</code> compositing so overlapping
-              warm and cool tones naturally deepen rather than turn muddy gray.
+              <strong>Edge-Preserving Bilateral Wash Filtering:</strong> Instead of an isotropic blur that mushes
+              adjacent hues together into muddy gray-brown, a fast color-distance-weighted bilateral filter smooths
+              interior surfaces into flat luminous washes while keeping distinct color regions cleanly separated.
             </li>
             <li>
-              <strong>Layered Irregular Pigment Blobs:</strong> Three progressive brush passes—from wide transparent
-              washes down to mid-detail strokes controlled by <em>Wash Softness</em> and <em>Brush Detail Scale</em>—lay
-              feathered radial-gradient ellipses using the photograph's true RGB pigments while letting near-white
-              highlights stay bare paper.
+              <strong>Soft Tonal Glaze Quantization:</strong> Subtle pigment-tier stepping transforms noisy camera
+              gradients into hand-painted watercolor wash levels while reserving bright specular highlights as clean
+              untouched paper.
             </li>
             <li>
-              <strong>Capillary Wet-Edge Pooling:</strong> Real watercolor pools slightly darker pigment along the
-              drying perimeter of a water drop. ChromaGlyph adds subtle darkened translucent rim rings and gentle
-              luminance-gradient accents so petals, clouds, and portraits keep painterly form without harsh digital lines.
+              <strong>Capillary Backrun &amp; Edge Accumulation:</strong> Along detected region borders, pigment
+              gently concentrates—slightly darkening and saturating the wash perimeter to reproduce the hallmark
+              aquarelle backrun rim.
             </li>
             <li>
-              <strong>Cold-Press Paper Tooth:</strong> A procedural micro-fiber grain overlay emulates 300gsm cold-press
-              cotton paper so flat gradients carry tactile physical warmth.
+              <strong>Cold-Press Paper Tooth &amp; Boundary-Aware Blooms:</strong> A deterministic micro-fiber cotton
+              paper grain and sparse interior pigment blooms add tactile warmth without smearing across color borders.
             </li>
           </ol>
         </section>
 
         <section id="hollow-outline">
-          <h2>6. Shape Detection &amp; Hollow White-Interior Outlines</h2>
+          <h2>6. Geometric Line-First Contours &amp; White-Interior Shapes</h2>
           <p>
-            Clean line-art extraction requires solving a classic computer vision challenge: separating <em>primary
-            structural shapes and silhouettes</em> from high-frequency photographic texture (such as concrete pores,
-            water sparkles, or camera grain) while keeping interior surfaces completely crisp and white (<code>#FFFFFF</code>).
+            Clean geometric line art solves two hard problems simultaneously: extracting <em>crisp straight lines and
+            structural contours</em> from noisy photography while keeping every interior surface pure white
+            (<code>#FFFFFF</code>), and handling soft, low-edge regions gracefully without producing chaotic static.
           </p>
           <ul>
             <li>
-              <strong>Detail-Controlled Separable Smoothing:</strong> Before detecting edges, the engine applies a fast
-              horizontal-and-vertical smoothing kernel scaled inversely by <em>Contour Detail Level</em>. Lower detail
-              levels (<code>Level 1–2</code>) melt away surface noise to isolate bold graphic silhouettes; higher levels
-              (<code>Level 4–5</code>) retain architectural mullions and fine botanical veins.
+              <strong>Color-Aware Sobel &amp; 8-Way Non-Maximum Suppression:</strong> The engine tracks both Rec. 709
+              luminance and individual RGB channel gradients, thinning blurred edge bands into clean single-pixel ridge
+              skeletons and caching the result for instant slider responsiveness.
             </li>
             <li>
-              <strong>Color-Aware + Rec. 709 Sobel Gradients:</strong> Standard grayscale edge detectors miss contours
-              where two adjacent objects share the same brightness (for example, vivid cyan beside vivid magenta).
-              ChromaGlyph computes Sobel derivatives across luminance <em>and</em> individual R, G, and B channels,
-              taking the strongest local boundary.
+              <strong>Chain Tracing &amp; Ramer–Douglas–Peucker (RDP) Line Simplification:</strong> Connected contour
+              chains are stripped of tiny noise specks and simplified via RDP geometry into crisp straight line segments
+              (with gentle horizontal/vertical axis snapping at bold detail levels).
             </li>
             <li>
-              <strong>8-Directional Non-Maximum Suppression &amp; Hysteresis:</strong> Thick blurred edge bands are
-              thinned down to single-pixel ridge skeletons along the gradient normal, then filtered with dual-threshold
-              hysteresis so connected curves remain unbroken over a pure <code>#FFFFFF</code> interior.
+              <strong>Clean Hollow Geometric Shape Fallback:</strong> In subject regions where clear edges are scarce
+              or softly diffused (such as glowing clouds, mist, or subtle gradients), ChromaGlyph emits minimal hollow
+              geometric polygons—triangles, diamonds, or hexagons oriented to the local gradient—while leaving empty
+              background space pure white.
             </li>
             <li>
-              <strong>Deepened Real-Color or Studio Ink Strokes:</strong> Outlines can be drawn in crisp Studio Black
-              Ink (<code>#0F172A</code>) for minimalist architectural drawings, or in deepened Real Subject RGB colors
-              so pale pastel highlights remain legible against pure white paper.
+              <strong>Pure <code>#FFFFFF</code> Interior &amp; Crisp Ink Options:</strong> Outlines render in Studio
+              Black Ink (<code>#0F172A</code>), deepened Real Subject RGB colors, or any active palette—exporting
+              cleanly at <code>1×</code> or <code>2× HiDPI</code> PNG.
             </li>
           </ul>
         </section>

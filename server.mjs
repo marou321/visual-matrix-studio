@@ -149,7 +149,7 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(304, {
         ETag: asset.etag,
         'Cache-Control': isCodeAsset ? 'no-cache, must-revalidate' : 'public, max-age=86400',
-        'X-App-Version': '2.5.0-nonblocking-aq-outline'
+        'X-App-Version': '2.6.0-bilateral-aq-geo-outline'
       });
       res.end();
       return;
@@ -171,7 +171,7 @@ const server = http.createServer(async (req, res) => {
       'Content-Length': body.length,
       ETag: asset.etag,
       'Cache-Control': isCodeAsset ? 'no-cache, must-revalidate' : 'public, max-age=86400',
-      'X-App-Version': '2.5.0-nonblocking-aq-outline'
+      'X-App-Version': '2.6.0-bilateral-aq-geo-outline'
     };
     if (encoding) {
       headers['Content-Encoding'] = encoding;

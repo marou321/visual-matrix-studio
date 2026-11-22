@@ -21,7 +21,7 @@
     href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&family=Space+Grotesk:wght@600;700&display=swap"
     rel="stylesheet"
   />
-  <link rel="stylesheet" href="/src/css/styles.css?v=2.5" />
+  <link rel="stylesheet" href="/src/css/styles.css?v=2.6" />
   <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4588627708948117" crossorigin="anonymous"></script>
   <script type="application/ld+json">
     {
@@ -754,28 +754,29 @@
             <div class="info-card-icon" style="color: #2dd4bf;">◐~</div>
             <h3>Aquarelle (Watercolor) Mode</h3>
             <p>
-              Simulates wet-on-wet watercolor painting by layering semi-transparent radial pigment washes in optical
-              <code>multiply</code> blend mode over textured cold-press paper, allowing the source photograph's real
-              colors to bleed and mingle softly.
+              Uses fast edge-preserving bilateral filtering to keep distinct color regions cleanly separated without
+              muddy over-fusion, paired with soft tonal glazes, darker capillary backrun rims around wash boundaries,
+              and cold-press paper grain.
             </p>
             <ul>
-              <li>Tune Wash Softness &amp; Bleed, Pigment Intensity, and 5-level Brush Detail Scale in real time.</li>
-              <li>Subtle capillary drying rims and translucent edge pooling preserve subject contours naturally.</li>
-              <li>Toggle procedural cold-press paper tooth for authentic gallery-print tactile warmth.</li>
+              <li>Preserves distinct chromatic regions while smoothing interior washes like real wet watercolor.</li>
+              <li>Subtle pigment edge accumulation adds authentic backrun darkening along drying wash borders.</li>
+              <li>Cached intermediate buffers keep Wash Softness, Pigment, and Detail sliders responsive and non-blocking.</li>
             </ul>
           </article>
 
           <article class="info-card">
             <div class="info-card-icon" style="color: var(--accent-amber);">▢</div>
-            <h3>Shape / Hollow Outline Mode</h3>
+            <h3>Geometric Line-First Outline Mode</h3>
             <p>
-              Extracts the primary shapes, contours, and silhouettes of your photograph using color-aware Sobel edge
-              detection and ridge thinning, leaving every interior shape pure crisp white (<code>#FFFFFF</code>).
+              Traces subject contours and simplifies them via Ramer–Douglas–Peucker (RDP) geometry into crisp straight
+              line segments over a pure white (<code>#FFFFFF</code>) interior—falling back cleanly to hollow geometric
+              polygons where clear edges are scarce.
             </p>
             <ul>
-              <li>Preserves boundaries between equally bright hues using RGB + Rec. 709 gradient tracking.</li>
-              <li>Control Edge Threshold, Outline Thickness (<code>1px–6px</code>), and Contour Detail Level.</li>
-              <li>Render outlines in Deepened Real Subject Colors, Crisp Studio Black Ink, or any active palette.</li>
+              <li>Prioritizes clean straight lines and structural edges while discarding messy pixel static.</li>
+              <li>Emits minimal hollow triangles, diamonds, or hexagons in soft low-edge subject regions.</li>
+              <li>Render in Deepened Real Subject Colors, Crisp Studio Black Ink, or any active palette at 1× or 2× PNG.</li>
             </ul>
           </article>
         </div>
@@ -994,8 +995,8 @@
     </div>
   </footer>
 
-  <script type="module" src="/src/js/theme.js?v=2.5"></script>
-  <script type="module" src="/src/js/studio.js?v=2.5"></script>
-  <script type="module" src="/src/js/gallery-renderer.js?v=2.5"></script>
+  <script type="module" src="/src/js/theme.js?v=2.6"></script>
+  <script type="module" src="/src/js/studio.js?v=2.6"></script>
+  <script type="module" src="/src/js/gallery-renderer.js?v=2.6"></script>
 </body>
 </html>
