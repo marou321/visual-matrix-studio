@@ -111,10 +111,12 @@ const server = http.createServer(async (req, res) => {
     const data = await fs.readFile(filePath);
     const ext = path.extname(filePath).toLowerCase();
     const contentType = MIME_TYPES[ext] || 'application/octet-stream';
+    const isCodeAsset = ext === '.html' || ext === '.css' || ext === '.js' || ext === '.mjs';
     res.writeHead(200, {
       'Content-Type': contentType,
       'Content-Length': data.length,
-      'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=3600'
+      'Cache-Control': isCodeAsset ? 'no-cache, must-revalidate' : 'public, max-age=86400',
+      'X-App-Version': '2.0.0-five-modes'
     });
     if (req.method === 'HEAD') {
       res.end();

@@ -3,6 +3,8 @@ services:
     name: visual-matrix-studio
     runtime: node
     plan: free
+    branch: main
+    autoDeploy: true
     buildCommand: npm install
     startCommand: node server.mjs
     healthCheckPath: /
