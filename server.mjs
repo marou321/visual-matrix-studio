@@ -84,6 +84,7 @@ const server = http.createServer(async (req, res) => {
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>404 — Page Not Found | ChromaGlyph Studio</title>
   <link rel="stylesheet" href="/src/css/styles.css" />
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4588627708948117" crossorigin="anonymous"></script>
 </head>
 <body class="page-404">
   <main class="container" style="padding: 6rem 1.5rem; text-align: center;">
