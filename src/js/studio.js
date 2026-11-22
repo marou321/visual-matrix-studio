@@ -303,12 +303,22 @@ function initStudio() {
     reader.readAsDataURL(file);
   }
 
-  // Event Listeners: Mode Tabs with smart backdrop adaptation
+  // Event Listeners: Mode Tabs with smart backdrop adaptation & Compare-Original auto-exit
   modeTabs.forEach((tab) => {
     tab.addEventListener('click', () => {
       const prevMode = state.config.mode;
       const nextMode = tab.dataset.mode;
       state.config.mode = nextMode;
+
+      // Exit "Compare Original" automatically when switching modes so the new mode renders immediately
+      if (state.showOriginal) {
+        state.showOriginal = false;
+        if (compareBtn) {
+          compareBtn.classList.remove('btn-active');
+          compareBtn.setAttribute('aria-pressed', 'false');
+          compareBtn.textContent = 'Compare Original';
+        }
+      }
 
       // Adapt canvas backdrop automatically for ideal first impression when switching between dark-native and paper-native modes
       if (nextMode === 'aquarelle' && ['obsidian', 'black', 'slate'].includes(state.config.background)) {

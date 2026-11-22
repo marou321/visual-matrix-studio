@@ -116,7 +116,7 @@ const server = http.createServer(async (req, res) => {
       'Content-Type': contentType,
       'Content-Length': data.length,
       'Cache-Control': isCodeAsset ? 'no-cache, must-revalidate' : 'public, max-age=86400',
-      'X-App-Version': '2.0.0-five-modes'
+      'X-App-Version': '2.2.0-aquarelle-outline-fix'
     });
     if (req.method === 'HEAD') {
       res.end();
